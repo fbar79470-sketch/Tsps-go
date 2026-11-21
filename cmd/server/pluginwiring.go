@@ -12,6 +12,7 @@ import (
 	// removing one is deleting it. There is no file discovery: Go
 	// has no dynamic plugin loading, so registration is
 	// compile-time by design (see internal/plugins/doc.go).
+	_ "tsps-go/internal/content/admincommands"
 	_ "tsps-go/internal/content/cooking"
 	_ "tsps-go/internal/content/dateminutes"
 	_ "tsps-go/internal/content/fishing"
