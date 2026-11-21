@@ -1,0 +1,1 @@
+{"name":"Object Plugin World","pluginConfig":{"Pre:existing":1},"plugins":{"FreeToPlay":{"enabled":true,"maxLevel":20},"LeagueMode":{"enabled":false,"season":3}},"spawn":{"x":3200,"y":3200,"z":0},"zones":[{"tags":["f2p"]}]}

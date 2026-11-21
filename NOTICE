@@ -1,0 +1,33 @@
+NOTICE — tsps-go
+================
+
+This project is a Go port of the server component of TSPS
+(https://github.com/RSPSApp/tsps), a TypeScript Old School RuneScape
+private server, at commit bfd81e3abf8ee758c3ae29cd4127ae088242d71b
+("Merge pull request #5193"). The upstream project is distributed
+under the BSD 2-Clause License; the full license text, including its
+copyright notice (Copyright (c) 2022-2026, dennisdev, xrsps), is
+preserved verbatim in the LICENSE file in this repository. This port
+is distributed under the same license.
+
+Upstream credits, as listed in the upstream README:
+
+  We want to thank Astrul/@Lerl, Detuks/@Reinismu,
+  Kraken/@UnhealthyKraken, Vexus/@Bandit-HaxUnit, @xrsps and all the
+  contributors of both the legacy Java project and the TypeScript
+  continuation.
+
+The upstream server is the official continuation of the Elvarg fork
+(RSPSApp/elvarg-rsps), ported to TypeScript; the upstream browser
+client was forked from xrsps/xrsps-typescript. This Go port covers
+the server only and keeps the existing TypeScript client.
+
+This fan project is not affiliated with Jagex Ltd. Old School
+RuneScape and related assets and trademarks belong to their
+respective owners.
+
+Cache data is never bundled with this project. The game cache must be
+obtained at runtime from the OpenRS2 archive
+(https://archive.openrs2.org), using the same download-at-deploy-time
+approach as the upstream server (see internal/cache). No cache
+binaries are redistributed by this repository.

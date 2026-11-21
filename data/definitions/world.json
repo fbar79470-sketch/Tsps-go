@@ -1,0 +1,11 @@
+{
+    "description": "",
+    "experienceMultiplier": 1,
+    "name": "Old School RuneScape",
+    "spawn": {
+        "x": 3089,
+        "y": 3524,
+        "z": 0
+    },
+    "zones": []
+}

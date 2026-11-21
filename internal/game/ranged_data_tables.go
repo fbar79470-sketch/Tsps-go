@@ -1,0 +1,372 @@
+package game
+
+// Ranged weapon and ammunition tables, ported from upstream
+// server/src/main/typescript/elvarg/game/content/combat/ranged/RangedData.ts
+// (617 lines) with CrystalBow.ts for the crystal-bow ids and the
+// Bow of Faerdhinen arrows. The tables were script-extracted from the
+// TS literals (parse ItemIdentifiers.ts, expand the dragonBolt /
+// javelins / BOW_OF_FAERDHINEN helpers and the poisoned-variant static
+// block, resolve every id) and then verified by count + spot-checks
+// (see ranged_data_test.go): upstream holds 193 ammunition kinds
+// covering 253 item ids (193 canonical + 60 poisoned-variant aliases)
+// and 102 ranged-weapon entries covering 229 weapon item ids; this
+// file holds exactly those numbers. Launch graphics are carried:
+// the ammunition start/double-start spotanims (the constructor's
+// second and fifth arguments) and the weapon launchGraphic /
+// startGraphic / doubleStartGraphic flags (WeaponProfile.ts) land
+// in AmmunitionData / RangedWeaponData (combat_ranged.go).
+// Ammunition strength IS carried (the constructor's fourth
+// argument, `strength` on each kind, wired into AmmunitionData
+// by ranged_data.go): it has no engine consumer — TS's
+// Ammunition.getStrength() is never called by the engine at
+// bfd81e3, and the ranged max hit reads the worn equipment's
+// ranged-strength bonus (BonusManager.ts:57-71, bonus index
+// 11), not the ammunition's strength — so the value rides
+// along for shape completeness and future content, and no
+// formula reads it.
+//
+// Javelin poisoned variants are separate Ammunition objects upstream
+// (javelins() builds one per id), so they appear here as their own
+// kinds with derived names (BRONZE_JAVELIN_V1..V3); the singular
+// aliases (BRONZE_JAVELIN = BRONZE_JAVELINS[0]) are the same object
+// as element 0 and add no kind. The variants static block instead maps
+// extra item ids onto ONE Ammunition object (poisoned arrows/bolts):
+// those ids are aliasIDs of the canonical kind, so CheckAmmo's
+// pointer comparison (combat_factory.go) sees the same AmmunitionData
+// for a poisoned arrow as for its plain form, exactly as TS compares
+// Ammunition object identity (CombatFactory.ts:1760-1770).
+
+// rangedAmmoKind is one Ammunition static (RangedData.ts): the
+// canonical item id, its travel-spotanim projectile id (the
+// constructor's third argument), the launch spotanim ids (the
+// constructor's second and fifth arguments: startGfx and
+// doubleStartGfx, 0 when null), the ranged strength (the
+// constructor's fourth argument: getStrength,
+// RangedData.ts:380-382), and the extra item ids the variants
+// static block maps onto this same Ammunition object.
+type rangedAmmoKind struct {
+	name                 string
+	itemID               int
+	projectileID         int
+	startGraphicID       int
+	doubleStartGraphicID int
+	strength             int
+	aliasIDs             []int
+}
+
+// rangedAmmunitionKinds is every Ammunition static in RangedData.ts,
+// in upstream declaration order.
+var rangedAmmunitionKinds = []rangedAmmoKind{ // 193 kinds, 253 item ids
+	{name: "BRONZE_ARROW", itemID: 882, projectileID: 10, aliasIDs: []int{883, 5616, 5622, 942}, startGraphicID: 19, doubleStartGraphicID: 1104, strength: 7},
+	{name: "IRON_ARROW", itemID: 884, projectileID: 9, aliasIDs: []int{885, 5617, 5623, 2533}, startGraphicID: 18, doubleStartGraphicID: 1105, strength: 10},
+	{name: "STEEL_ARROW", itemID: 886, projectileID: 11, aliasIDs: []int{887, 5618, 5624, 2535}, startGraphicID: 20, doubleStartGraphicID: 1106, strength: 16},
+	{name: "MITHRIL_ARROW", itemID: 888, projectileID: 12, aliasIDs: []int{889, 5619, 5625, 2537}, startGraphicID: 21, doubleStartGraphicID: 1107, strength: 22},
+	{name: "ADAMANT_ARROW", itemID: 890, projectileID: 13, aliasIDs: []int{891, 5620, 5626, 2539}, startGraphicID: 22, doubleStartGraphicID: 1108, strength: 31},
+	{name: "RUNE_ARROW", itemID: 892, projectileID: 15, aliasIDs: []int{893, 5621, 5627, 2541}, startGraphicID: 24, doubleStartGraphicID: 1109, strength: 50},
+	{name: "ICE_ARROW", itemID: 78, projectileID: 16, aliasIDs: nil, startGraphicID: 25, doubleStartGraphicID: 1110, strength: 58},
+	{name: "BROAD_ARROW", itemID: 4160, projectileID: 326, aliasIDs: nil, startGraphicID: 325, doubleStartGraphicID: 1112, strength: 58},
+	{name: "AMETHYST_ARROW", itemID: 21326, projectileID: 1384, aliasIDs: []int{21332, 21334, 21336, 21330}, startGraphicID: 1385, doubleStartGraphicID: 0, strength: 55},
+	{name: "TRAINING_ARROWS", itemID: 9706, projectileID: 805, aliasIDs: nil, startGraphicID: 806, doubleStartGraphicID: 0, strength: 7},
+	{name: "DRAGON_ARROW", itemID: 11212, projectileID: 1120, aliasIDs: []int{11227, 11228, 11229, 11222}, startGraphicID: 1116, doubleStartGraphicID: 1111, strength: 65},
+	{name: "SEEKING_DRAGON_ARROW", itemID: 33595, projectileID: 1120, aliasIDs: nil, startGraphicID: 1116, doubleStartGraphicID: 1111, strength: 60},
+	{name: "BRONZE_BOLT", itemID: 877, projectileID: 27, aliasIDs: []int{878, 6061, 6062}, startGraphicID: 0, doubleStartGraphicID: 0, strength: 13},
+	{name: "OPAL_BOLT", itemID: 879, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 20},
+	{name: "ENCHANTED_OPAL_BOLT", itemID: 9236, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 20},
+	{name: "IRON_BOLT", itemID: 9140, projectileID: 27, aliasIDs: []int{9287, 9294, 9301}, startGraphicID: 0, doubleStartGraphicID: 0, strength: 28},
+	{name: "JADE_BOLT", itemID: 9335, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 31},
+	{name: "ENCHANTED_JADE_BOLT", itemID: 9237, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 31},
+	{name: "STEEL_BOLT", itemID: 9141, projectileID: 27, aliasIDs: []int{9288, 9295, 9302}, startGraphicID: 0, doubleStartGraphicID: 0, strength: 35},
+	{name: "PEARL_BOLT", itemID: 880, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 38},
+	{name: "ENCHANTED_PEARL_BOLT", itemID: 9238, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 38},
+	{name: "MITHRIL_BOLT", itemID: 9142, projectileID: 27, aliasIDs: []int{9289, 9296, 9303}, startGraphicID: 0, doubleStartGraphicID: 0, strength: 40},
+	{name: "TOPAZ_BOLT", itemID: 9336, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 50},
+	{name: "ENCHANTED_TOPAZ_BOLT", itemID: 9239, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 50},
+	{name: "ADAMANT_BOLT", itemID: 9143, projectileID: 27, aliasIDs: []int{9290, 9297, 9304}, startGraphicID: 0, doubleStartGraphicID: 0, strength: 60},
+	{name: "SAPPHIRE_BOLT", itemID: 9337, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 65},
+	{name: "ENCHANTED_SAPPHIRE_BOLT", itemID: 9240, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 65},
+	{name: "EMERALD_BOLT", itemID: 9338, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 70},
+	{name: "ENCHANTED_EMERALD_BOLT", itemID: 9241, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 70},
+	{name: "RUBY_BOLT", itemID: 9339, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 75},
+	{name: "ENCHANTED_RUBY_BOLT", itemID: 9242, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 75},
+	{name: "BROAD_BOLT", itemID: 11875, projectileID: 27, aliasIDs: []int{21316}, startGraphicID: 0, doubleStartGraphicID: 0, strength: 100},
+	{name: "RUNITE_BOLT", itemID: 9144, projectileID: 27, aliasIDs: []int{9291, 9298, 9305}, startGraphicID: 0, doubleStartGraphicID: 0, strength: 115},
+	{name: "DIAMOND_BOLT", itemID: 9340, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 105},
+	{name: "ENCHANTED_DIAMOND_BOLT", itemID: 9243, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 105},
+	{name: "DRAGON_BOLT", itemID: 9341, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 117},
+	{name: "ENCHANTED_DRAGON_BOLT", itemID: 9244, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 117},
+	{name: "ONYX_BOLT", itemID: 9342, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 120},
+	{name: "ENCHANTED_ONYX_BOLT", itemID: 9245, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 120},
+	{name: "ENCHANTED_DRAGONSTONE_DRAGON_BOLT", itemID: 21948, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 122},
+	{name: "ASCENSION_BOLT", itemID: 34684, projectileID: 4437, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 53},
+	{name: "DIAMOND_ASCENSION_BOLT", itemID: 34690, projectileID: 4439, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 58},
+	{name: "ENCHANTED_DIAMOND_ASCENSION_BOLT", itemID: 34696, projectileID: 4439, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 58},
+	{name: "ONYX_ASCENSION_BOLT", itemID: 34702, projectileID: 4438, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 58},
+	{name: "ENCHANTED_ONYX_ASCENSION_BOLT", itemID: 34708, projectileID: 4438, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 58},
+	{name: "BRONZE_DART", itemID: 806, projectileID: 226, aliasIDs: nil, startGraphicID: 232, doubleStartGraphicID: 0, strength: 1},
+	{name: "IRON_DART", itemID: 807, projectileID: 227, aliasIDs: nil, startGraphicID: 233, doubleStartGraphicID: 0, strength: 2},
+	{name: "STEEL_DART", itemID: 808, projectileID: 228, aliasIDs: nil, startGraphicID: 234, doubleStartGraphicID: 0, strength: 3},
+	{name: "MITHRIL_DART", itemID: 809, projectileID: 229, aliasIDs: nil, startGraphicID: 235, doubleStartGraphicID: 0, strength: 9},
+	{name: "ADAMANT_DART", itemID: 810, projectileID: 230, aliasIDs: nil, startGraphicID: 236, doubleStartGraphicID: 0, strength: 17},
+	{name: "RUNE_DART", itemID: 811, projectileID: 231, aliasIDs: nil, startGraphicID: 237, doubleStartGraphicID: 0, strength: 26},
+	{name: "BLACK_DART", itemID: 3093, projectileID: 34, aliasIDs: nil, startGraphicID: 273, doubleStartGraphicID: 0, strength: 6},
+	{name: "AMETHYST_DART", itemID: 25849, projectileID: 1936, aliasIDs: nil, startGraphicID: 1937, doubleStartGraphicID: 0, strength: 28},
+	{name: "DRAGON_DART", itemID: 11230, projectileID: 1122, aliasIDs: nil, startGraphicID: 1123, doubleStartGraphicID: 0, strength: 35},
+	{name: "BLISTERWOOD_STAKE", itemID: 33716, projectileID: 3987, aliasIDs: nil, startGraphicID: 3989, doubleStartGraphicID: 0, strength: 14},
+	{name: "BRONZE_KNIFE", itemID: 864, projectileID: 212, aliasIDs: nil, startGraphicID: 219, doubleStartGraphicID: 0, strength: 3},
+	{name: "BRONZE_KNIFE_P1", itemID: 870, projectileID: 212, aliasIDs: nil, startGraphicID: 219, doubleStartGraphicID: 0, strength: 3},
+	{name: "BRONZE_KNIFE_P2", itemID: 5654, projectileID: 212, aliasIDs: nil, startGraphicID: 219, doubleStartGraphicID: 0, strength: 3},
+	{name: "BRONZE_KNIFE_P3", itemID: 5661, projectileID: 212, aliasIDs: nil, startGraphicID: 219, doubleStartGraphicID: 0, strength: 3},
+	{name: "IRON_KNIFE", itemID: 863, projectileID: 213, aliasIDs: nil, startGraphicID: 220, doubleStartGraphicID: 0, strength: 4},
+	{name: "IRON_KNIFE_P1", itemID: 871, projectileID: 213, aliasIDs: nil, startGraphicID: 220, doubleStartGraphicID: 0, strength: 4},
+	{name: "IRON_KNIFE_P2", itemID: 5655, projectileID: 213, aliasIDs: nil, startGraphicID: 220, doubleStartGraphicID: 0, strength: 4},
+	{name: "IRON_KNIFE_P3", itemID: 5662, projectileID: 213, aliasIDs: nil, startGraphicID: 220, doubleStartGraphicID: 0, strength: 4},
+	{name: "STEEL_KNIFE", itemID: 865, projectileID: 214, aliasIDs: nil, startGraphicID: 221, doubleStartGraphicID: 0, strength: 7},
+	{name: "STEEL_KNIFE_P1", itemID: 872, projectileID: 214, aliasIDs: nil, startGraphicID: 221, doubleStartGraphicID: 0, strength: 7},
+	{name: "STEEL_KNIFE_P2", itemID: 5656, projectileID: 214, aliasIDs: nil, startGraphicID: 221, doubleStartGraphicID: 0, strength: 7},
+	{name: "STEEL_KNIFE_P3", itemID: 5663, projectileID: 214, aliasIDs: nil, startGraphicID: 221, doubleStartGraphicID: 0, strength: 7},
+	{name: "BLACK_KNIFE", itemID: 869, projectileID: 215, aliasIDs: nil, startGraphicID: 222, doubleStartGraphicID: 0, strength: 8},
+	{name: "BLACK_KNIFE_P1", itemID: 874, projectileID: 215, aliasIDs: nil, startGraphicID: 222, doubleStartGraphicID: 0, strength: 8},
+	{name: "BLACK_KNIFE_P2", itemID: 5658, projectileID: 215, aliasIDs: nil, startGraphicID: 222, doubleStartGraphicID: 0, strength: 8},
+	{name: "BLACK_KNIFE_P3", itemID: 5665, projectileID: 215, aliasIDs: nil, startGraphicID: 222, doubleStartGraphicID: 0, strength: 8},
+	{name: "MITHRIL_KNIFE", itemID: 866, projectileID: 215, aliasIDs: nil, startGraphicID: 223, doubleStartGraphicID: 0, strength: 10},
+	{name: "MITHRIL_KNIFE_P1", itemID: 873, projectileID: 215, aliasIDs: nil, startGraphicID: 223, doubleStartGraphicID: 0, strength: 10},
+	{name: "MITHRIL_KNIFE_P2", itemID: 5657, projectileID: 215, aliasIDs: nil, startGraphicID: 223, doubleStartGraphicID: 0, strength: 10},
+	{name: "MITHRIL_KNIFE_P3", itemID: 5664, projectileID: 215, aliasIDs: nil, startGraphicID: 223, doubleStartGraphicID: 0, strength: 10},
+	{name: "ADAMANT_KNIFE", itemID: 867, projectileID: 217, aliasIDs: nil, startGraphicID: 224, doubleStartGraphicID: 0, strength: 14},
+	{name: "ADAMANT_KNIFE_P1", itemID: 875, projectileID: 217, aliasIDs: nil, startGraphicID: 224, doubleStartGraphicID: 0, strength: 14},
+	{name: "ADAMANT_KNIFE_P2", itemID: 5659, projectileID: 217, aliasIDs: nil, startGraphicID: 224, doubleStartGraphicID: 0, strength: 14},
+	{name: "ADAMANT_KNIFE_P3", itemID: 5666, projectileID: 217, aliasIDs: nil, startGraphicID: 224, doubleStartGraphicID: 0, strength: 14},
+	{name: "RUNE_KNIFE", itemID: 868, projectileID: 218, aliasIDs: nil, startGraphicID: 225, doubleStartGraphicID: 0, strength: 24},
+	{name: "RUNE_KNIFE_P1", itemID: 876, projectileID: 218, aliasIDs: nil, startGraphicID: 225, doubleStartGraphicID: 0, strength: 24},
+	{name: "RUNE_KNIFE_P2", itemID: 5660, projectileID: 218, aliasIDs: nil, startGraphicID: 225, doubleStartGraphicID: 0, strength: 24},
+	{name: "RUNE_KNIFE_P3", itemID: 5667, projectileID: 218, aliasIDs: nil, startGraphicID: 225, doubleStartGraphicID: 0, strength: 24},
+	{name: "DRAGON_KNIFE", itemID: 22804, projectileID: 28, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 30},
+	{name: "DRAGON_KNIFE_P1", itemID: 22806, projectileID: 697, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 30},
+	{name: "DRAGON_KNIFE_P2", itemID: 22808, projectileID: 697, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 30},
+	{name: "DRAGON_KNIFE_P3", itemID: 22810, projectileID: 697, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 30},
+	{name: "SILVTHRILL_JAVELIN", itemID: 33801, projectileID: 3806, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 0},
+	{name: "MORRIGANS_JAVELIN", itemID: 22636, projectileID: 1620, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 145},
+	{name: "TOKTZ_XIL_UL", itemID: 6522, projectileID: 442, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 58},
+	{name: "BOLT_RACK", itemID: 4740, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 55},
+	{name: "BONE_BOLT", itemID: 8882, projectileID: 696, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 49},
+	{name: "CRYSTAL_BOW", itemID: 4214, projectileID: 249, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 0},
+	{name: "GAUNTLET_BOW", itemID: 23901, projectileID: 249, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 0},
+	{name: "WEBWEAVER_BOW", itemID: 27655, projectileID: 1693, aliasIDs: nil, startGraphicID: 1692, doubleStartGraphicID: 0, strength: 0},
+	{name: "CRAWS_BOW", itemID: 22550, projectileID: 1693, aliasIDs: nil, startGraphicID: 1692, doubleStartGraphicID: 0, strength: 0},
+	{name: "BRONZE_THROWNAXE", itemID: 800, projectileID: 36, aliasIDs: nil, startGraphicID: 43, doubleStartGraphicID: 0, strength: 5},
+	{name: "IRON_THROWNAXE", itemID: 801, projectileID: 35, aliasIDs: nil, startGraphicID: 42, doubleStartGraphicID: 0, strength: 7},
+	{name: "STEEL_THROWNAXE", itemID: 802, projectileID: 37, aliasIDs: nil, startGraphicID: 44, doubleStartGraphicID: 0, strength: 11},
+	{name: "MITHRIL_THROWNAXE", itemID: 803, projectileID: 38, aliasIDs: nil, startGraphicID: 45, doubleStartGraphicID: 0, strength: 16},
+	{name: "ADAMANT_THROWNAXE", itemID: 804, projectileID: 39, aliasIDs: nil, startGraphicID: 46, doubleStartGraphicID: 0, strength: 23},
+	{name: "RUNE_THROWNAXE", itemID: 805, projectileID: 41, aliasIDs: nil, startGraphicID: 48, doubleStartGraphicID: 0, strength: 36},
+	{name: "DRAGON_THROWNAXE", itemID: 20849, projectileID: 1319, aliasIDs: nil, startGraphicID: 1320, doubleStartGraphicID: 0, strength: 47},
+	{name: "MORRIGANS_THROWING_AXE", itemID: 27912, projectileID: 1623, aliasIDs: nil, startGraphicID: 1624, doubleStartGraphicID: 0, strength: 0},
+	{name: "SAGES_AXE", itemID: 28773, projectileID: 41, aliasIDs: nil, startGraphicID: 48, doubleStartGraphicID: 0, strength: 0},
+	{name: "CHINCHOMPA", itemID: 10033, projectileID: 908, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 0},
+	{name: "RED_CHINCHOMPA", itemID: 10034, projectileID: 909, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 0},
+	{name: "BLACK_CHINCHOMPA", itemID: 11959, projectileID: 1272, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 0},
+	{name: "GUAM_TAR", itemID: 10142, projectileID: 33, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 16},
+	{name: "MARRENTILL_TAR", itemID: 10143, projectileID: 33, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 22},
+	{name: "TARROMIN_TAR", itemID: 10144, projectileID: 33, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 31},
+	{name: "HARRALANDER_TAR", itemID: 10145, projectileID: 33, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 49},
+	{name: "IRIT_TAR", itemID: 28837, projectileID: 33, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 60},
+	{name: "TONALZTICS_OF_RALOS_UNCHARGED", itemID: 28919, projectileID: 2729, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 0},
+	{name: "TONALZTICS_OF_RALOS", itemID: 28922, projectileID: 2729, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 0},
+	{name: "BLURITE_BOLT", itemID: 9139, projectileID: 27, aliasIDs: []int{9286, 9293, 9300}, startGraphicID: 0, doubleStartGraphicID: 0, strength: 28},
+	{name: "SILVER_BOLT", itemID: 9145, projectileID: 27, aliasIDs: []int{9292, 9299, 9306}, startGraphicID: 0, doubleStartGraphicID: 0, strength: 36},
+	{name: "BARBED_BOLT", itemID: 881, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 12},
+	{name: "KEBBIT_BOLT", itemID: 10158, projectileID: 27, aliasIDs: nil, startGraphicID: 955, doubleStartGraphicID: 0, strength: 28},
+	{name: "LONG_KEBBIT_BOLT", itemID: 10159, projectileID: 27, aliasIDs: nil, startGraphicID: 955, doubleStartGraphicID: 0, strength: 38},
+	{name: "SUNLIGHT_ANTLER_BOLT", itemID: 28872, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 0},
+	{name: "MOONLIGHT_ANTLER_BOLT", itemID: 28878, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 0},
+	{name: "OGRE_ARROW", itemID: 2866, projectileID: 242, aliasIDs: nil, startGraphicID: 243, doubleStartGraphicID: 0, strength: 22},
+	{name: "BRONZE_BRUTAL", itemID: 4773, projectileID: 242, aliasIDs: nil, startGraphicID: 243, doubleStartGraphicID: 0, strength: 11},
+	{name: "IRON_BRUTAL", itemID: 4778, projectileID: 242, aliasIDs: nil, startGraphicID: 243, doubleStartGraphicID: 0, strength: 13},
+	{name: "STEEL_BRUTAL", itemID: 4783, projectileID: 242, aliasIDs: nil, startGraphicID: 243, doubleStartGraphicID: 0, strength: 19},
+	{name: "BLACK_BRUTAL", itemID: 4788, projectileID: 242, aliasIDs: nil, startGraphicID: 243, doubleStartGraphicID: 0, strength: 22},
+	{name: "MITHRIL_BRUTAL", itemID: 4793, projectileID: 242, aliasIDs: nil, startGraphicID: 243, doubleStartGraphicID: 0, strength: 34},
+	{name: "ADAMANT_BRUTAL", itemID: 4798, projectileID: 242, aliasIDs: nil, startGraphicID: 243, doubleStartGraphicID: 0, strength: 45},
+	{name: "RUNE_BRUTAL", itemID: 4803, projectileID: 242, aliasIDs: nil, startGraphicID: 243, doubleStartGraphicID: 0, strength: 60},
+	{name: "DRAGON_BOLTS", itemID: 21905, projectileID: 27, aliasIDs: []int{21924, 21926, 21928}, startGraphicID: 0, doubleStartGraphicID: 0, strength: 122},
+	{name: "OPAL_DRAGON_BOLT", itemID: 21955, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 122},
+	{name: "ENCHANTED_OPAL_DRAGON_BOLT", itemID: 21932, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 122},
+	{name: "JADE_DRAGON_BOLT", itemID: 21957, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 122},
+	{name: "ENCHANTED_JADE_DRAGON_BOLT", itemID: 21934, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 122},
+	{name: "PEARL_DRAGON_BOLT", itemID: 21959, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 122},
+	{name: "ENCHANTED_PEARL_DRAGON_BOLT", itemID: 21936, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 122},
+	{name: "TOPAZ_DRAGON_BOLT", itemID: 21961, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 122},
+	{name: "ENCHANTED_TOPAZ_DRAGON_BOLT", itemID: 21938, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 122},
+	{name: "SAPPHIRE_DRAGON_BOLT", itemID: 21963, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 122},
+	{name: "ENCHANTED_SAPPHIRE_DRAGON_BOLT", itemID: 21940, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 122},
+	{name: "EMERALD_DRAGON_BOLT", itemID: 21965, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 122},
+	{name: "ENCHANTED_EMERALD_DRAGON_BOLT", itemID: 21942, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 122},
+	{name: "RUBY_DRAGON_BOLT", itemID: 21967, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 122},
+	{name: "ENCHANTED_RUBY_DRAGON_BOLT", itemID: 21944, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 122},
+	{name: "DIAMOND_DRAGON_BOLT", itemID: 21969, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 122},
+	{name: "ENCHANTED_DIAMOND_DRAGON_BOLT", itemID: 21946, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 122},
+	{name: "DRAGONSTONE_DRAGON_BOLT", itemID: 21971, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 122},
+	{name: "ONYX_DRAGON_BOLT", itemID: 21973, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 122},
+	{name: "ENCHANTED_ONYX_DRAGON_BOLT", itemID: 21950, projectileID: 27, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 122},
+	{name: "BRONZE_JAVELIN", itemID: 825, projectileID: 200, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 25},
+	{name: "BRONZE_JAVELIN_V1", itemID: 831, projectileID: 200, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 25},
+	{name: "BRONZE_JAVELIN_V2", itemID: 5642, projectileID: 200, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 25},
+	{name: "BRONZE_JAVELIN_V3", itemID: 5648, projectileID: 200, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 25},
+	{name: "IRON_JAVELIN", itemID: 826, projectileID: 201, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 42},
+	{name: "IRON_JAVELIN_V1", itemID: 832, projectileID: 201, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 42},
+	{name: "IRON_JAVELIN_V2", itemID: 5643, projectileID: 201, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 42},
+	{name: "IRON_JAVELIN_V3", itemID: 5649, projectileID: 201, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 42},
+	{name: "STEEL_JAVELIN", itemID: 827, projectileID: 202, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 64},
+	{name: "STEEL_JAVELIN_V1", itemID: 833, projectileID: 202, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 64},
+	{name: "STEEL_JAVELIN_V2", itemID: 5644, projectileID: 202, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 64},
+	{name: "STEEL_JAVELIN_V3", itemID: 5650, projectileID: 202, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 64},
+	{name: "MITHRIL_JAVELIN", itemID: 828, projectileID: 203, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 85},
+	{name: "MITHRIL_JAVELIN_V1", itemID: 834, projectileID: 203, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 85},
+	{name: "MITHRIL_JAVELIN_V2", itemID: 5645, projectileID: 203, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 85},
+	{name: "MITHRIL_JAVELIN_V3", itemID: 5651, projectileID: 203, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 85},
+	{name: "ADAMANT_JAVELIN", itemID: 829, projectileID: 204, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 107},
+	{name: "ADAMANT_JAVELIN_V1", itemID: 835, projectileID: 204, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 107},
+	{name: "ADAMANT_JAVELIN_V2", itemID: 5646, projectileID: 204, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 107},
+	{name: "ADAMANT_JAVELIN_V3", itemID: 5652, projectileID: 204, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 107},
+	{name: "RUNE_JAVELIN", itemID: 830, projectileID: 205, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 124},
+	{name: "RUNE_JAVELIN_V1", itemID: 836, projectileID: 205, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 124},
+	{name: "RUNE_JAVELIN_V2", itemID: 5647, projectileID: 205, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 124},
+	{name: "RUNE_JAVELIN_V3", itemID: 5653, projectileID: 205, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 124},
+	{name: "AMETHYST_JAVELIN", itemID: 21318, projectileID: 1386, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 135},
+	{name: "AMETHYST_JAVELIN_V1", itemID: 21320, projectileID: 1386, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 135},
+	{name: "AMETHYST_JAVELIN_V2", itemID: 21322, projectileID: 1386, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 135},
+	{name: "AMETHYST_JAVELIN_V3", itemID: 21324, projectileID: 1386, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 135},
+	{name: "DRAGON_JAVELIN", itemID: 19484, projectileID: 1301, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 150},
+	{name: "DRAGON_JAVELIN_V1", itemID: 19486, projectileID: 1301, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 150},
+	{name: "DRAGON_JAVELIN_V2", itemID: 19488, projectileID: 1301, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 150},
+	{name: "DRAGON_JAVELIN_V3", itemID: 19490, projectileID: 1301, aliasIDs: nil, startGraphicID: 0, doubleStartGraphicID: 0, strength: 150},
+	{name: "FAERDHINEN_25865", itemID: 25865, projectileID: 1887, aliasIDs: nil, startGraphicID: 1888, doubleStartGraphicID: 0, strength: 0},
+	{name: "FAERDHINEN_27187", itemID: 27187, projectileID: 1887, aliasIDs: nil, startGraphicID: 1888, doubleStartGraphicID: 0, strength: 0},
+	{name: "FAERDHINEN_25867", itemID: 25867, projectileID: 1922, aliasIDs: nil, startGraphicID: 1923, doubleStartGraphicID: 0, strength: 0},
+	{name: "FAERDHINEN_25884", itemID: 25884, projectileID: 1924, aliasIDs: nil, startGraphicID: 1925, doubleStartGraphicID: 0, strength: 0},
+	{name: "FAERDHINEN_25886", itemID: 25886, projectileID: 1926, aliasIDs: nil, startGraphicID: 1927, doubleStartGraphicID: 0, strength: 0},
+	{name: "FAERDHINEN_25888", itemID: 25888, projectileID: 1928, aliasIDs: nil, startGraphicID: 1929, doubleStartGraphicID: 0, strength: 0},
+	{name: "FAERDHINEN_25890", itemID: 25890, projectileID: 1930, aliasIDs: nil, startGraphicID: 1931, doubleStartGraphicID: 0, strength: 0},
+	{name: "FAERDHINEN_25892", itemID: 25892, projectileID: 1932, aliasIDs: nil, startGraphicID: 1933, doubleStartGraphicID: 0, strength: 0},
+	{name: "FAERDHINEN_25894", itemID: 25894, projectileID: 1922, aliasIDs: nil, startGraphicID: 1923, doubleStartGraphicID: 0, strength: 0},
+	{name: "FAERDHINEN_25896", itemID: 25896, projectileID: 1934, aliasIDs: nil, startGraphicID: 1935, doubleStartGraphicID: 0, strength: 0},
+	{name: "FAERDHINEN_33021", itemID: 33021, projectileID: 1922, aliasIDs: nil, startGraphicID: 1923, doubleStartGraphicID: 0, strength: 0},
+}
+
+// rangedWeaponEntry is one RangedWeapon static (RangedData.ts): the
+// weapon item ids, the ammunition kinds it accepts (by kind name),
+// and its RangedWeaponType name, which selects the distance /
+// hit-delay / projectile profile in ranged_data.go.
+type rangedWeaponEntry struct {
+	name       string
+	weaponIDs  []int
+	ammoKinds  []string
+	weaponType string
+}
+
+// rangedWeaponEntries is every RangedWeapon static in RangedData.ts,
+// in upstream declaration order, plus one entry per Bow of Faerdhinen
+// (upstream builds them with a map over BOW_OF_FAERDHINEN_ARROWS).
+var rangedWeaponEntries = []rangedWeaponEntry{ // 102 entries, 229 weapon item ids
+	{name: "LONGBOW", weaponIDs: []int{839}, ammoKinds: []string{"BRONZE_ARROW", "IRON_ARROW"}, weaponType: "LONGBOW"},
+	{name: "SHORTBOW", weaponIDs: []int{841}, ammoKinds: []string{"BRONZE_ARROW", "IRON_ARROW"}, weaponType: "SHORTBOW"},
+	{name: "TRAINING_BOW", weaponIDs: []int{9705}, ammoKinds: []string{"TRAINING_ARROWS"}, weaponType: "SHORTBOW"},
+	{name: "OAK_LONGBOW", weaponIDs: []int{845}, ammoKinds: []string{"BRONZE_ARROW", "IRON_ARROW", "STEEL_ARROW"}, weaponType: "LONGBOW"},
+	{name: "OAK_SHORTBOW", weaponIDs: []int{843}, ammoKinds: []string{"BRONZE_ARROW", "IRON_ARROW", "STEEL_ARROW"}, weaponType: "SHORTBOW"},
+	{name: "WILLOW_LONGBOW", weaponIDs: []int{847}, ammoKinds: []string{"BRONZE_ARROW", "IRON_ARROW", "STEEL_ARROW", "MITHRIL_ARROW"}, weaponType: "LONGBOW"},
+	{name: "WILLOW_SHORTBOW", weaponIDs: []int{849}, ammoKinds: []string{"BRONZE_ARROW", "IRON_ARROW", "STEEL_ARROW", "MITHRIL_ARROW"}, weaponType: "SHORTBOW"},
+	{name: "MAPLE_LONGBOW", weaponIDs: []int{851}, ammoKinds: []string{"BRONZE_ARROW", "IRON_ARROW", "STEEL_ARROW", "MITHRIL_ARROW", "ADAMANT_ARROW"}, weaponType: "LONGBOW"},
+	{name: "MAPLE_SHORTBOW", weaponIDs: []int{853}, ammoKinds: []string{"BRONZE_ARROW", "IRON_ARROW", "STEEL_ARROW", "MITHRIL_ARROW", "ADAMANT_ARROW"}, weaponType: "SHORTBOW"},
+	{name: "YEW_LONGBOW", weaponIDs: []int{855}, ammoKinds: []string{"BRONZE_ARROW", "IRON_ARROW", "STEEL_ARROW", "MITHRIL_ARROW", "ADAMANT_ARROW", "RUNE_ARROW", "ICE_ARROW"}, weaponType: "LONGBOW"},
+	{name: "YEW_SHORTBOW", weaponIDs: []int{857}, ammoKinds: []string{"BRONZE_ARROW", "IRON_ARROW", "STEEL_ARROW", "MITHRIL_ARROW", "ADAMANT_ARROW", "RUNE_ARROW", "ICE_ARROW"}, weaponType: "SHORTBOW"},
+	{name: "MAGIC_LONGBOW", weaponIDs: []int{859}, ammoKinds: []string{"BRONZE_ARROW", "IRON_ARROW", "STEEL_ARROW", "MITHRIL_ARROW", "ADAMANT_ARROW", "RUNE_ARROW", "ICE_ARROW", "BROAD_ARROW", "AMETHYST_ARROW"}, weaponType: "LONGBOW"},
+	{name: "MAGIC_SHORTBOW", weaponIDs: []int{861, 12788, 20558}, ammoKinds: []string{"BRONZE_ARROW", "IRON_ARROW", "STEEL_ARROW", "MITHRIL_ARROW", "ADAMANT_ARROW", "RUNE_ARROW", "ICE_ARROW", "BROAD_ARROW", "AMETHYST_ARROW"}, weaponType: "SHORTBOW"},
+	{name: "BONE_SHORTBOW", weaponIDs: []int{28794}, ammoKinds: []string{"BRONZE_ARROW", "IRON_ARROW", "STEEL_ARROW", "MITHRIL_ARROW", "ADAMANT_ARROW", "RUNE_ARROW", "ICE_ARROW", "BROAD_ARROW", "AMETHYST_ARROW"}, weaponType: "SHORTBOW"},
+	{name: "THIRD_AGE_BOW", weaponIDs: []int{12424}, ammoKinds: []string{"BRONZE_ARROW", "IRON_ARROW", "STEEL_ARROW", "MITHRIL_ARROW", "ADAMANT_ARROW", "RUNE_ARROW", "ICE_ARROW", "BROAD_ARROW", "AMETHYST_ARROW", "DRAGON_ARROW", "SEEKING_DRAGON_ARROW"}, weaponType: "SHORTBOW"},
+	{name: "CRYSTAL_BOW", weaponIDs: []int{4212, 11748, 23985, 4214, 11749, 4215, 11750, 4216, 11751, 4217, 11752, 4218, 11753, 4219, 11754, 4220, 11755, 4221, 11756, 4222, 11757, 4223, 11758, 23983, 24123}, ammoKinds: []string{"CRYSTAL_BOW"}, weaponType: "CRYSTAL_BOW"},
+	{name: "GAUNTLET_BOW", weaponIDs: []int{23901, 23902, 23903, 23855, 23856, 23857}, ammoKinds: []string{"GAUNTLET_BOW"}, weaponType: "GAUNTLET_BOW"},
+	{name: "WEBWEAVER_BOW", weaponIDs: []int{27655, 27656}, ammoKinds: []string{"WEBWEAVER_BOW"}, weaponType: "SHORTBOW"},
+	{name: "CRAWS_BOW", weaponIDs: []int{22550, 22551}, ammoKinds: []string{"CRAWS_BOW"}, weaponType: "SHORTBOW"},
+	{name: "SEERCULL", weaponIDs: []int{6724}, ammoKinds: []string{"BRONZE_ARROW", "IRON_ARROW", "STEEL_ARROW", "MITHRIL_ARROW", "ADAMANT_ARROW", "RUNE_ARROW", "ICE_ARROW", "BROAD_ARROW", "AMETHYST_ARROW"}, weaponType: "SHORTBOW"},
+	{name: "TWISTED_BOW", weaponIDs: []int{20997}, ammoKinds: []string{"BRONZE_ARROW", "IRON_ARROW", "STEEL_ARROW", "MITHRIL_ARROW", "ADAMANT_ARROW", "RUNE_ARROW", "ICE_ARROW", "BROAD_ARROW", "AMETHYST_ARROW", "DRAGON_ARROW", "SEEKING_DRAGON_ARROW"}, weaponType: "TWISTED_BOW"},
+	{name: "VENATOR_BOW", weaponIDs: []int{27610, 27612}, ammoKinds: []string{"BRONZE_ARROW", "IRON_ARROW", "STEEL_ARROW", "MITHRIL_ARROW", "ADAMANT_ARROW", "RUNE_ARROW", "ICE_ARROW", "BROAD_ARROW", "AMETHYST_ARROW", "DRAGON_ARROW", "SEEKING_DRAGON_ARROW"}, weaponType: "VENATOR_BOW"},
+	{name: "SCORCHING_BOW", weaponIDs: []int{29591}, ammoKinds: []string{"BRONZE_ARROW", "IRON_ARROW", "STEEL_ARROW", "MITHRIL_ARROW", "ADAMANT_ARROW", "RUNE_ARROW", "ICE_ARROW", "BROAD_ARROW", "AMETHYST_ARROW", "DRAGON_ARROW", "SEEKING_DRAGON_ARROW"}, weaponType: "SCORCHING_BOW"},
+	{name: "NATURES_RECURVE", weaponIDs: []int{33245}, ammoKinds: []string{"BRONZE_ARROW", "IRON_ARROW", "STEEL_ARROW", "MITHRIL_ARROW", "ADAMANT_ARROW", "RUNE_ARROW", "ICE_ARROW", "BROAD_ARROW", "AMETHYST_ARROW", "DRAGON_ARROW", "SEEKING_DRAGON_ARROW"}, weaponType: "SHORTBOW"},
+	{name: "DARK_BOW", weaponIDs: []int{11235, 12765, 12766, 12767, 12768, 20408, 27853, 29599, 29611}, ammoKinds: []string{"BRONZE_ARROW", "IRON_ARROW", "STEEL_ARROW", "MITHRIL_ARROW", "ADAMANT_ARROW", "RUNE_ARROW", "ICE_ARROW", "AMETHYST_ARROW", "DRAGON_ARROW", "SEEKING_DRAGON_ARROW"}, weaponType: "LONGBOW"},
+	{name: "CROSSBOW", weaponIDs: []int{837, 767, 11165, 11167}, ammoKinds: []string{"BRONZE_BOLT"}, weaponType: "CROSSBOW"},
+	{name: "BLURITE_CROSSBOW", weaponIDs: []int{9176}, ammoKinds: []string{"BRONZE_BOLT", "BLURITE_BOLT"}, weaponType: "CROSSBOW"},
+	{name: "HUNTERS_CROSSBOW", weaponIDs: []int{10156}, ammoKinds: []string{"KEBBIT_BOLT", "LONG_KEBBIT_BOLT"}, weaponType: "CROSSBOW"},
+	{name: "HUNTERS_SUNLIGHT_CROSSBOW", weaponIDs: []int{28869}, ammoKinds: []string{"SUNLIGHT_ANTLER_BOLT", "MOONLIGHT_ANTLER_BOLT"}, weaponType: "CROSSBOW"},
+	{name: "BRONZE_CROSSBOW", weaponIDs: []int{9174}, ammoKinds: []string{"BRONZE_BOLT"}, weaponType: "CROSSBOW"},
+	{name: "IRON_CROSSBOW", weaponIDs: []int{9177}, ammoKinds: []string{"BRONZE_BOLT", "OPAL_BOLT", "BARBED_BOLT", "BLURITE_BOLT", "ENCHANTED_OPAL_BOLT", "IRON_BOLT", "SILVER_BOLT"}, weaponType: "CROSSBOW"},
+	{name: "STEEL_CROSSBOW", weaponIDs: []int{9179}, ammoKinds: []string{"BRONZE_BOLT", "OPAL_BOLT", "BARBED_BOLT", "BLURITE_BOLT", "ENCHANTED_OPAL_BOLT", "IRON_BOLT", "SILVER_BOLT", "JADE_BOLT", "ENCHANTED_JADE_BOLT", "STEEL_BOLT", "PEARL_BOLT", "ENCHANTED_PEARL_BOLT"}, weaponType: "CROSSBOW"},
+	{name: "MITHRIL_CROSSBOW", weaponIDs: []int{9181}, ammoKinds: []string{"BRONZE_BOLT", "OPAL_BOLT", "BARBED_BOLT", "BLURITE_BOLT", "ENCHANTED_OPAL_BOLT", "IRON_BOLT", "SILVER_BOLT", "JADE_BOLT", "ENCHANTED_JADE_BOLT", "STEEL_BOLT", "PEARL_BOLT", "ENCHANTED_PEARL_BOLT", "MITHRIL_BOLT", "TOPAZ_BOLT", "ENCHANTED_TOPAZ_BOLT", "SAPPHIRE_BOLT", "ENCHANTED_SAPPHIRE_BOLT", "EMERALD_BOLT", "ENCHANTED_EMERALD_BOLT"}, weaponType: "CROSSBOW"},
+	{name: "ADAMANT_CROSSBOW", weaponIDs: []int{9183}, ammoKinds: []string{"BRONZE_BOLT", "OPAL_BOLT", "BARBED_BOLT", "BLURITE_BOLT", "ENCHANTED_OPAL_BOLT", "IRON_BOLT", "SILVER_BOLT", "JADE_BOLT", "ENCHANTED_JADE_BOLT", "STEEL_BOLT", "PEARL_BOLT", "ENCHANTED_PEARL_BOLT", "MITHRIL_BOLT", "TOPAZ_BOLT", "ENCHANTED_TOPAZ_BOLT", "ADAMANT_BOLT", "SAPPHIRE_BOLT", "ENCHANTED_SAPPHIRE_BOLT", "EMERALD_BOLT", "ENCHANTED_EMERALD_BOLT", "RUBY_BOLT", "ENCHANTED_RUBY_BOLT"}, weaponType: "CROSSBOW"},
+	{name: "RUNE_CROSSBOW", weaponIDs: []int{9185, 26486}, ammoKinds: []string{"BRONZE_BOLT", "OPAL_BOLT", "BARBED_BOLT", "BLURITE_BOLT", "ENCHANTED_OPAL_BOLT", "IRON_BOLT", "SILVER_BOLT", "JADE_BOLT", "ENCHANTED_JADE_BOLT", "STEEL_BOLT", "PEARL_BOLT", "ENCHANTED_PEARL_BOLT", "MITHRIL_BOLT", "TOPAZ_BOLT", "ENCHANTED_TOPAZ_BOLT", "ADAMANT_BOLT", "SAPPHIRE_BOLT", "ENCHANTED_SAPPHIRE_BOLT", "EMERALD_BOLT", "ENCHANTED_EMERALD_BOLT", "RUBY_BOLT", "ENCHANTED_RUBY_BOLT", "RUNITE_BOLT", "BROAD_BOLT", "DIAMOND_BOLT", "ENCHANTED_DIAMOND_BOLT", "ONYX_BOLT", "ENCHANTED_ONYX_BOLT", "DRAGON_BOLT", "ENCHANTED_DRAGON_BOLT"}, weaponType: "CROSSBOW"},
+	{name: "DRAGON_CROSSBOW", weaponIDs: []int{21902, 21903, 21904, 28053, 21012, 21013, 21014, 25916, 25917, 25918, 25919}, ammoKinds: []string{"BRONZE_BOLT", "OPAL_BOLT", "BARBED_BOLT", "BLURITE_BOLT", "ENCHANTED_OPAL_BOLT", "IRON_BOLT", "SILVER_BOLT", "JADE_BOLT", "ENCHANTED_JADE_BOLT", "STEEL_BOLT", "PEARL_BOLT", "ENCHANTED_PEARL_BOLT", "MITHRIL_BOLT", "TOPAZ_BOLT", "ENCHANTED_TOPAZ_BOLT", "ADAMANT_BOLT", "SAPPHIRE_BOLT", "ENCHANTED_SAPPHIRE_BOLT", "EMERALD_BOLT", "ENCHANTED_EMERALD_BOLT", "RUBY_BOLT", "ENCHANTED_RUBY_BOLT", "RUNITE_BOLT", "BROAD_BOLT", "DIAMOND_BOLT", "ENCHANTED_DIAMOND_BOLT", "ONYX_BOLT", "ENCHANTED_ONYX_BOLT", "DRAGON_BOLT", "ENCHANTED_DRAGON_BOLT", "ENCHANTED_DRAGONSTONE_DRAGON_BOLT", "DRAGON_BOLTS", "OPAL_DRAGON_BOLT", "ENCHANTED_OPAL_DRAGON_BOLT", "JADE_DRAGON_BOLT", "ENCHANTED_JADE_DRAGON_BOLT", "PEARL_DRAGON_BOLT", "ENCHANTED_PEARL_DRAGON_BOLT", "TOPAZ_DRAGON_BOLT", "ENCHANTED_TOPAZ_DRAGON_BOLT", "SAPPHIRE_DRAGON_BOLT", "ENCHANTED_SAPPHIRE_DRAGON_BOLT", "EMERALD_DRAGON_BOLT", "ENCHANTED_EMERALD_DRAGON_BOLT", "RUBY_DRAGON_BOLT", "ENCHANTED_RUBY_DRAGON_BOLT", "DIAMOND_DRAGON_BOLT", "ENCHANTED_DIAMOND_DRAGON_BOLT", "DRAGONSTONE_DRAGON_BOLT", "ENCHANTED_DRAGONSTONE_DRAGON_BOLT", "ONYX_DRAGON_BOLT", "ENCHANTED_ONYX_DRAGON_BOLT"}, weaponType: "CROSSBOW"},
+	{name: "DORGESHUUN_CROSSBOW", weaponIDs: []int{8880}, ammoKinds: []string{"BRONZE_BOLT", "BLURITE_BOLT", "IRON_BOLT", "BONE_BOLT"}, weaponType: "CROSSBOW"},
+	{name: "ASCENSION_CROSSBOWS", weaponIDs: []int{34681}, ammoKinds: []string{"ASCENSION_BOLT", "DIAMOND_ASCENSION_BOLT", "ENCHANTED_DIAMOND_ASCENSION_BOLT", "ONYX_ASCENSION_BOLT", "ENCHANTED_ONYX_ASCENSION_BOLT"}, weaponType: "ASCENSION_CROSSBOWS"},
+	{name: "ARMADYL_CROSSBOW", weaponIDs: []int{11785}, ammoKinds: []string{"BRONZE_BOLT", "OPAL_BOLT", "BARBED_BOLT", "BLURITE_BOLT", "ENCHANTED_OPAL_BOLT", "IRON_BOLT", "SILVER_BOLT", "JADE_BOLT", "ENCHANTED_JADE_BOLT", "STEEL_BOLT", "PEARL_BOLT", "ENCHANTED_PEARL_BOLT", "MITHRIL_BOLT", "TOPAZ_BOLT", "ENCHANTED_TOPAZ_BOLT", "ADAMANT_BOLT", "SAPPHIRE_BOLT", "ENCHANTED_SAPPHIRE_BOLT", "EMERALD_BOLT", "ENCHANTED_EMERALD_BOLT", "RUBY_BOLT", "ENCHANTED_RUBY_BOLT", "RUNITE_BOLT", "BROAD_BOLT", "DIAMOND_BOLT", "ENCHANTED_DIAMOND_BOLT", "ONYX_BOLT", "ENCHANTED_ONYX_BOLT", "DRAGON_BOLT", "ENCHANTED_DRAGON_BOLT", "ENCHANTED_DRAGONSTONE_DRAGON_BOLT", "DRAGON_BOLTS", "OPAL_DRAGON_BOLT", "ENCHANTED_OPAL_DRAGON_BOLT", "JADE_DRAGON_BOLT", "ENCHANTED_JADE_DRAGON_BOLT", "PEARL_DRAGON_BOLT", "ENCHANTED_PEARL_DRAGON_BOLT", "TOPAZ_DRAGON_BOLT", "ENCHANTED_TOPAZ_DRAGON_BOLT", "SAPPHIRE_DRAGON_BOLT", "ENCHANTED_SAPPHIRE_DRAGON_BOLT", "EMERALD_DRAGON_BOLT", "ENCHANTED_EMERALD_DRAGON_BOLT", "RUBY_DRAGON_BOLT", "ENCHANTED_RUBY_DRAGON_BOLT", "DIAMOND_DRAGON_BOLT", "ENCHANTED_DIAMOND_DRAGON_BOLT", "DRAGONSTONE_DRAGON_BOLT", "ENCHANTED_DRAGONSTONE_DRAGON_BOLT", "ONYX_DRAGON_BOLT", "ENCHANTED_ONYX_DRAGON_BOLT"}, weaponType: "CROSSBOW"},
+	{name: "ZARYTE_CROSSBOW", weaponIDs: []int{26374}, ammoKinds: []string{"BRONZE_BOLT", "OPAL_BOLT", "BARBED_BOLT", "BLURITE_BOLT", "ENCHANTED_OPAL_BOLT", "IRON_BOLT", "SILVER_BOLT", "JADE_BOLT", "ENCHANTED_JADE_BOLT", "STEEL_BOLT", "PEARL_BOLT", "ENCHANTED_PEARL_BOLT", "MITHRIL_BOLT", "TOPAZ_BOLT", "ENCHANTED_TOPAZ_BOLT", "ADAMANT_BOLT", "SAPPHIRE_BOLT", "ENCHANTED_SAPPHIRE_BOLT", "EMERALD_BOLT", "ENCHANTED_EMERALD_BOLT", "RUBY_BOLT", "ENCHANTED_RUBY_BOLT", "RUNITE_BOLT", "BROAD_BOLT", "DIAMOND_BOLT", "ENCHANTED_DIAMOND_BOLT", "ONYX_BOLT", "ENCHANTED_ONYX_BOLT", "DRAGON_BOLT", "ENCHANTED_DRAGON_BOLT", "ENCHANTED_DRAGONSTONE_DRAGON_BOLT", "DRAGON_BOLTS", "OPAL_DRAGON_BOLT", "ENCHANTED_OPAL_DRAGON_BOLT", "JADE_DRAGON_BOLT", "ENCHANTED_JADE_DRAGON_BOLT", "PEARL_DRAGON_BOLT", "ENCHANTED_PEARL_DRAGON_BOLT", "TOPAZ_DRAGON_BOLT", "ENCHANTED_TOPAZ_DRAGON_BOLT", "SAPPHIRE_DRAGON_BOLT", "ENCHANTED_SAPPHIRE_DRAGON_BOLT", "EMERALD_DRAGON_BOLT", "ENCHANTED_EMERALD_DRAGON_BOLT", "RUBY_DRAGON_BOLT", "ENCHANTED_RUBY_DRAGON_BOLT", "DIAMOND_DRAGON_BOLT", "ENCHANTED_DIAMOND_DRAGON_BOLT", "DRAGONSTONE_DRAGON_BOLT", "ENCHANTED_DRAGONSTONE_DRAGON_BOLT", "ONYX_DRAGON_BOLT", "ENCHANTED_ONYX_DRAGON_BOLT"}, weaponType: "CROSSBOW"},
+	{name: "KINGS_BARRAGE", weaponIDs: []int{33251}, ammoKinds: []string{"BRONZE_BOLT", "OPAL_BOLT", "BARBED_BOLT", "BLURITE_BOLT", "ENCHANTED_OPAL_BOLT", "IRON_BOLT", "SILVER_BOLT", "JADE_BOLT", "ENCHANTED_JADE_BOLT", "STEEL_BOLT", "PEARL_BOLT", "ENCHANTED_PEARL_BOLT", "MITHRIL_BOLT", "TOPAZ_BOLT", "ENCHANTED_TOPAZ_BOLT", "ADAMANT_BOLT", "SAPPHIRE_BOLT", "ENCHANTED_SAPPHIRE_BOLT", "EMERALD_BOLT", "ENCHANTED_EMERALD_BOLT", "RUBY_BOLT", "ENCHANTED_RUBY_BOLT", "RUNITE_BOLT", "BROAD_BOLT", "DIAMOND_BOLT", "ENCHANTED_DIAMOND_BOLT", "ONYX_BOLT", "ENCHANTED_ONYX_BOLT", "DRAGON_BOLT", "ENCHANTED_DRAGON_BOLT", "ENCHANTED_DRAGONSTONE_DRAGON_BOLT", "DRAGON_BOLTS", "OPAL_DRAGON_BOLT", "ENCHANTED_OPAL_DRAGON_BOLT", "JADE_DRAGON_BOLT", "ENCHANTED_JADE_DRAGON_BOLT", "PEARL_DRAGON_BOLT", "ENCHANTED_PEARL_DRAGON_BOLT", "TOPAZ_DRAGON_BOLT", "ENCHANTED_TOPAZ_DRAGON_BOLT", "SAPPHIRE_DRAGON_BOLT", "ENCHANTED_SAPPHIRE_DRAGON_BOLT", "EMERALD_DRAGON_BOLT", "ENCHANTED_EMERALD_DRAGON_BOLT", "RUBY_DRAGON_BOLT", "ENCHANTED_RUBY_DRAGON_BOLT", "DIAMOND_DRAGON_BOLT", "ENCHANTED_DIAMOND_DRAGON_BOLT", "DRAGONSTONE_DRAGON_BOLT", "ENCHANTED_DRAGONSTONE_DRAGON_BOLT", "ONYX_DRAGON_BOLT", "ENCHANTED_ONYX_DRAGON_BOLT"}, weaponType: "CROSSBOW"},
+	{name: "BRONZE_DART", weaponIDs: []int{806, 812, 5628, 5635}, ammoKinds: []string{"BRONZE_DART"}, weaponType: "DART"},
+	{name: "IRON_DART", weaponIDs: []int{807, 813, 5629, 5636}, ammoKinds: []string{"IRON_DART"}, weaponType: "DART"},
+	{name: "STEEL_DART", weaponIDs: []int{808, 814, 5630, 5637}, ammoKinds: []string{"STEEL_DART"}, weaponType: "DART"},
+	{name: "MITHRIL_DART", weaponIDs: []int{809, 815, 5632, 5639}, ammoKinds: []string{"MITHRIL_DART"}, weaponType: "DART"},
+	{name: "ADAMANT_DART", weaponIDs: []int{810, 816, 5633, 5640}, ammoKinds: []string{"ADAMANT_DART"}, weaponType: "DART"},
+	{name: "RUNE_DART", weaponIDs: []int{811, 817, 5634, 5641}, ammoKinds: []string{"RUNE_DART"}, weaponType: "DART"},
+	{name: "BLACK_DART", weaponIDs: []int{3093, 3094, 5631, 5638}, ammoKinds: []string{"BLACK_DART"}, weaponType: "DART"},
+	{name: "AMETHYST_DART", weaponIDs: []int{25849, 25851, 25855, 25857}, ammoKinds: []string{"AMETHYST_DART"}, weaponType: "DART"},
+	{name: "DRAGON_DART", weaponIDs: []int{11230, 11231, 11233, 11234}, ammoKinds: []string{"DRAGON_DART"}, weaponType: "DART"},
+	{name: "BLISTERWOOD_STAKE", weaponIDs: []int{33716}, ammoKinds: []string{"BLISTERWOOD_STAKE"}, weaponType: "DART"},
+	{name: "BRONZE_KNIFE", weaponIDs: []int{864, 870, 5654, 5661}, ammoKinds: []string{"BRONZE_KNIFE"}, weaponType: "KNIFE"},
+	{name: "IRON_KNIFE", weaponIDs: []int{863, 871, 5655, 5662}, ammoKinds: []string{"IRON_KNIFE"}, weaponType: "KNIFE"},
+	{name: "STEEL_KNIFE", weaponIDs: []int{865, 872, 5656, 5663}, ammoKinds: []string{"STEEL_KNIFE"}, weaponType: "KNIFE"},
+	{name: "BLACK_KNIFE", weaponIDs: []int{869, 874, 5658, 5665}, ammoKinds: []string{"BLACK_KNIFE"}, weaponType: "KNIFE"},
+	{name: "MITHRIL_KNIFE", weaponIDs: []int{866, 873, 5657, 5664}, ammoKinds: []string{"MITHRIL_KNIFE"}, weaponType: "KNIFE"},
+	{name: "ADAMANT_KNIFE", weaponIDs: []int{867, 875, 5659, 5666}, ammoKinds: []string{"ADAMANT_KNIFE"}, weaponType: "KNIFE"},
+	{name: "RUNE_KNIFE", weaponIDs: []int{868, 876, 5660, 5667}, ammoKinds: []string{"RUNE_KNIFE"}, weaponType: "KNIFE"},
+	{name: "DRAGON_KNIFE", weaponIDs: []int{22804, 22806, 22808, 22810}, ammoKinds: []string{"DRAGON_KNIFE"}, weaponType: "KNIFE"},
+	{name: "TOKTZ_XIL_UL", weaponIDs: []int{6522}, ammoKinds: []string{"TOKTZ_XIL_UL"}, weaponType: "TOKTZ_XIL_UL"},
+	{name: "KARILS_CROSSBOW", weaponIDs: []int{4734, 4934, 4935, 4936, 4937}, ammoKinds: []string{"BOLT_RACK"}, weaponType: "CROSSBOW"},
+	{name: "BALLISTA", weaponIDs: []int{19478, 19481, 27188, 26712}, ammoKinds: []string{"BRONZE_JAVELIN", "BRONZE_JAVELIN_V1", "BRONZE_JAVELIN_V2", "BRONZE_JAVELIN_V3", "IRON_JAVELIN", "IRON_JAVELIN_V1", "IRON_JAVELIN_V2", "IRON_JAVELIN_V3", "STEEL_JAVELIN", "STEEL_JAVELIN_V1", "STEEL_JAVELIN_V2", "STEEL_JAVELIN_V3", "MITHRIL_JAVELIN", "MITHRIL_JAVELIN_V1", "MITHRIL_JAVELIN_V2", "MITHRIL_JAVELIN_V3", "ADAMANT_JAVELIN", "ADAMANT_JAVELIN_V1", "ADAMANT_JAVELIN_V2", "ADAMANT_JAVELIN_V3", "RUNE_JAVELIN", "RUNE_JAVELIN_V1", "RUNE_JAVELIN_V2", "RUNE_JAVELIN_V3", "AMETHYST_JAVELIN", "AMETHYST_JAVELIN_V1", "AMETHYST_JAVELIN_V2", "AMETHYST_JAVELIN_V3", "DRAGON_JAVELIN", "DRAGON_JAVELIN_V1", "DRAGON_JAVELIN_V2", "DRAGON_JAVELIN_V3"}, weaponType: "BALLISTA"},
+	{name: "SILVTHRILL_BALLISTA", weaponIDs: []int{33800}, ammoKinds: []string{"SILVTHRILL_JAVELIN"}, weaponType: "BALLISTA"},
+	{name: "TOXIC_BLOWPIPE", weaponIDs: []int{12926}, ammoKinds: []string{"BRONZE_DART", "IRON_DART", "STEEL_DART", "BLACK_DART", "MITHRIL_DART", "ADAMANT_DART", "RUNE_DART", "AMETHYST_DART", "DRAGON_DART"}, weaponType: "BLOWPIPE"},
+	{name: "ROSEWOOD_BLOWPIPE", weaponIDs: []int{31583, 31584}, ammoKinds: []string{"BRONZE_DART", "IRON_DART", "STEEL_DART", "BLACK_DART", "MITHRIL_DART", "ADAMANT_DART", "RUNE_DART", "AMETHYST_DART", "DRAGON_DART"}, weaponType: "BLOWPIPE"},
+	{name: "DRYGORE_BLOWPIPE", weaponIDs: []int{30374}, ammoKinds: []string{"BRONZE_DART", "IRON_DART", "STEEL_DART", "BLACK_DART", "MITHRIL_DART", "ADAMANT_DART", "RUNE_DART", "AMETHYST_DART", "DRAGON_DART"}, weaponType: "BLOWPIPE"},
+	{name: "RUNE_THROWNAXE", weaponIDs: []int{805, 14471}, ammoKinds: []string{"RUNE_THROWNAXE"}, weaponType: "THROWNAXE"},
+	{name: "BRONZE_THROWNAXE", weaponIDs: []int{800}, ammoKinds: []string{"BRONZE_THROWNAXE"}, weaponType: "THROWNAXE"},
+	{name: "IRON_THROWNAXE", weaponIDs: []int{801}, ammoKinds: []string{"IRON_THROWNAXE"}, weaponType: "THROWNAXE"},
+	{name: "STEEL_THROWNAXE", weaponIDs: []int{802}, ammoKinds: []string{"STEEL_THROWNAXE"}, weaponType: "THROWNAXE"},
+	{name: "MITHRIL_THROWNAXE", weaponIDs: []int{803}, ammoKinds: []string{"MITHRIL_THROWNAXE"}, weaponType: "THROWNAXE"},
+	{name: "ADAMANT_THROWNAXE", weaponIDs: []int{804}, ammoKinds: []string{"ADAMANT_THROWNAXE"}, weaponType: "THROWNAXE"},
+	{name: "WILLOW_COMP_BOW", weaponIDs: []int{10280}, ammoKinds: []string{"BRONZE_ARROW", "IRON_ARROW", "STEEL_ARROW", "MITHRIL_ARROW"}, weaponType: "SHORTBOW"},
+	{name: "YEW_COMP_BOW", weaponIDs: []int{10282}, ammoKinds: []string{"BRONZE_ARROW", "IRON_ARROW", "STEEL_ARROW", "MITHRIL_ARROW", "ADAMANT_ARROW", "RUNE_ARROW", "ICE_ARROW"}, weaponType: "SHORTBOW"},
+	{name: "MAGIC_COMP_BOW", weaponIDs: []int{10284}, ammoKinds: []string{"BRONZE_ARROW", "IRON_ARROW", "STEEL_ARROW", "MITHRIL_ARROW", "ADAMANT_ARROW", "RUNE_ARROW", "ICE_ARROW", "BROAD_ARROW", "AMETHYST_ARROW"}, weaponType: "SHORTBOW"},
+	{name: "OGRE_BOW", weaponIDs: []int{2883}, ammoKinds: []string{"OGRE_ARROW", "BRONZE_BRUTAL", "IRON_BRUTAL", "STEEL_BRUTAL", "BLACK_BRUTAL", "MITHRIL_BRUTAL"}, weaponType: "SHORTBOW"},
+	{name: "COMP_OGRE_BOW", weaponIDs: []int{4827}, ammoKinds: []string{"OGRE_ARROW", "BRONZE_BRUTAL", "IRON_BRUTAL", "STEEL_BRUTAL", "BLACK_BRUTAL", "MITHRIL_BRUTAL", "ADAMANT_BRUTAL", "RUNE_BRUTAL", "BRONZE_ARROW", "IRON_ARROW", "STEEL_ARROW", "MITHRIL_ARROW", "ADAMANT_ARROW", "RUNE_ARROW"}, weaponType: "SHORTBOW"},
+	{name: "CHINCHOMPA", weaponIDs: []int{10033}, ammoKinds: []string{"CHINCHOMPA"}, weaponType: "CHINCHOMPA"},
+	{name: "RED_CHINCHOMPA", weaponIDs: []int{10034}, ammoKinds: []string{"RED_CHINCHOMPA"}, weaponType: "CHINCHOMPA"},
+	{name: "BLACK_CHINCHOMPA", weaponIDs: []int{11959}, ammoKinds: []string{"BLACK_CHINCHOMPA"}, weaponType: "CHINCHOMPA"},
+	{name: "SWAMP_LIZARD", weaponIDs: []int{10149}, ammoKinds: []string{"GUAM_TAR"}, weaponType: "SALAMANDER"},
+	{name: "ORANGE_SALAMANDER", weaponIDs: []int{10146}, ammoKinds: []string{"MARRENTILL_TAR"}, weaponType: "SALAMANDER"},
+	{name: "RED_SALAMANDER", weaponIDs: []int{10147}, ammoKinds: []string{"TARROMIN_TAR"}, weaponType: "SALAMANDER"},
+	{name: "BLACK_SALAMANDER", weaponIDs: []int{10148}, ammoKinds: []string{"HARRALANDER_TAR"}, weaponType: "SALAMANDER"},
+	{name: "TECU_SALAMANDER", weaponIDs: []int{28834}, ammoKinds: []string{"IRIT_TAR"}, weaponType: "SALAMANDER"},
+	{name: "DRAGON_THROWNAXE", weaponIDs: []int{20849, 21207, 20850}, ammoKinds: []string{"DRAGON_THROWNAXE"}, weaponType: "THROWNAXE"},
+	{name: "MORRIGANS_THROWING_AXE", weaponIDs: []int{22634, 22635, 27912, 27913}, ammoKinds: []string{"MORRIGANS_THROWING_AXE"}, weaponType: "THROWNAXE"},
+	{name: "SAGES_AXE", weaponIDs: []int{28773, 28774}, ammoKinds: []string{"SAGES_AXE"}, weaponType: "DART"},
+	{name: "TONALZTICS_OF_RALOS_UNCHARGED", weaponIDs: []int{28919}, ammoKinds: []string{"TONALZTICS_OF_RALOS_UNCHARGED"}, weaponType: "GLAIVE"},
+	{name: "TONALZTICS_OF_RALOS", weaponIDs: []int{28922, 28923}, ammoKinds: []string{"TONALZTICS_OF_RALOS"}, weaponType: "GLAIVE"},
+	{name: "MORRIGANS_JAVELIN", weaponIDs: []int{22636, 22637, 23619, 27916, 27917}, ammoKinds: []string{"MORRIGANS_JAVELIN"}, weaponType: "MORRIGANS_JAVELIN"},
+	{name: "FAERDHINEN_25865", weaponIDs: []int{25865}, ammoKinds: []string{"FAERDHINEN_25865"}, weaponType: "CRYSTAL_BOW"},
+	{name: "FAERDHINEN_27187", weaponIDs: []int{27187}, ammoKinds: []string{"FAERDHINEN_27187"}, weaponType: "CRYSTAL_BOW"},
+	{name: "FAERDHINEN_25867", weaponIDs: []int{25867}, ammoKinds: []string{"FAERDHINEN_25867"}, weaponType: "CRYSTAL_BOW"},
+	{name: "FAERDHINEN_25884", weaponIDs: []int{25884}, ammoKinds: []string{"FAERDHINEN_25884"}, weaponType: "CRYSTAL_BOW"},
+	{name: "FAERDHINEN_25886", weaponIDs: []int{25886}, ammoKinds: []string{"FAERDHINEN_25886"}, weaponType: "CRYSTAL_BOW"},
+	{name: "FAERDHINEN_25888", weaponIDs: []int{25888}, ammoKinds: []string{"FAERDHINEN_25888"}, weaponType: "CRYSTAL_BOW"},
+	{name: "FAERDHINEN_25890", weaponIDs: []int{25890}, ammoKinds: []string{"FAERDHINEN_25890"}, weaponType: "CRYSTAL_BOW"},
+	{name: "FAERDHINEN_25892", weaponIDs: []int{25892}, ammoKinds: []string{"FAERDHINEN_25892"}, weaponType: "CRYSTAL_BOW"},
+	{name: "FAERDHINEN_25894", weaponIDs: []int{25894}, ammoKinds: []string{"FAERDHINEN_25894"}, weaponType: "CRYSTAL_BOW"},
+	{name: "FAERDHINEN_25896", weaponIDs: []int{25896}, ammoKinds: []string{"FAERDHINEN_25896"}, weaponType: "CRYSTAL_BOW"},
+	{name: "FAERDHINEN_33021", weaponIDs: []int{33021}, ammoKinds: []string{"FAERDHINEN_33021"}, weaponType: "CRYSTAL_BOW"},
+}
