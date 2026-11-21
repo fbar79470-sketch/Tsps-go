@@ -66,6 +66,14 @@ type Task struct {
 	// Action executed (Task.ts onTick() hook, empty by default in TS).
 	OnTick func(cycle int64)
 
+	// OnStop runs when the task is stopped via Stop() — the Go form of
+	// a Task subclass overriding stop() (Task.ts stop()). It does NOT
+	// run when the task finishes by returning done=true from Action;
+	// that path stops the task without a stop() call, as in TS. Nil
+	// means no stop hook. Used by ForceMovementTask, whose stop()
+	// clears the force movement instance it owns.
+	OnStop func()
+
 	countdown   int
 	running     bool
 	initialized bool
@@ -101,8 +109,17 @@ func (t *Task) SetDelay(delay int) {
 }
 
 // Stop marks the task stopped; the manager drops it on the next pass.
-// Task.ts: stop().
-func (t *Task) Stop() { t.running = false }
+// Task.ts: stop(). A set OnStop hook runs once, on the first Stop call
+// that finds the task running.
+func (t *Task) Stop() {
+	if !t.running {
+		return
+	}
+	t.running = false
+	if t.OnStop != nil {
+		t.OnStop()
+	}
+}
 
 // Tick advances the task one tick and reports whether it is still running
 // afterwards, porting Task.ts tick():

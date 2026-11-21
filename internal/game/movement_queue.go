@@ -499,19 +499,29 @@ func (q *MovementQueue) getMobility() mobility {
 // animation-stall/trading-duel subset of MovementQueue.ts:345-376
 // (getMobilityIgnoringFreeze), in TS order: a live STUN timer
 // reports STUNNED, checked before the INVALID sources; the
-// blockMovement hold reports INVALID; a player's full combat
-// animation stall reports ANIMATION_STALL; an unfinished
-// trading or duelling button delay reports BUSY; a duel with
-// the NO_MOVEMENT rule reports DUEL_MOVEMENT_DISABLED;
-// anything else is MOBILE. The remaining TS checks in this
-// method — needsPlacement and force movement — read state
-// that does not exist in Go; see canMove.
+// blockMovement hold reports INVALID; an active force movement
+// reports INVALID; a player's full combat animation stall reports
+// ANIMATION_STALL; an unfinished trading or duelling button delay
+// reports BUSY; a duel with the NO_MOVEMENT rule reports
+// DUEL_MOVEMENT_DISABLED; anything else is MOBILE. The remaining TS
+// check in this method — needsPlacement — reads state the gate
+// deliberately does not consult yet; see canMove.
 func (q *MovementQueue) getMobilityIgnoringFreeze() mobility {
 	if q.owner.GetTimers().Has(TimerKeyStun) {
 		return mobilityStunned
 	}
 	if q.blockMovement {
 		return mobilityInvalid
+	}
+	// MovementQueue.ts:350-351: an active force movement holds the
+	// player still (INVALID, silent — see canMove). The interface
+	// assertion keeps owners without forced movement (test fakes,
+	// NPCs) on the old path; NPCs never glide (TS checks isPlayer
+	// first via the player?.getForceMovement() read).
+	if q.owner.IsPlayer() {
+		if fmOwner, ok := q.owner.(interface{ ForceMovement() *ForceMovement }); ok && fmOwner.ForceMovement() != nil {
+			return mobilityInvalid
+		}
 	}
 	// MovementQueue.ts:361-362: a player's full animation
 	// stall (Combat.isAnimationStalled) holds movement. The
@@ -561,19 +571,18 @@ func (q *MovementQueue) getMobilityIgnoringFreeze() mobility {
 // never an invented system:
 //   - INVALID via needsPlacement (350-351):
 //     character.isNeedsPlacement() (Mobile.ts:839-841). The Go field
-//     exists (Mobile.NeedsPlacement) but no production code ever
-//     sets it: the TS setters are the teleport paths (Mobile.moveTo
-//     and the smart-move paths, Mobile.ts:198, 227, 252) and the
-//     login/bind paths (Player.onLogin, Player.ts:783;
-//     NetworkBuilder.bindControlledPlayer, NetworkBuilder.ts:535),
-//     none of which is ported, and the MovementOwner interface
-//     exposes no placement read. Consulting the field would be dead
-//     behavior coupled to a sync marker, so it is deliberately not
-//     consulted. The field's live use is sync placement
-//     (visibility/flush), cleared by ResetUpdating.
+//     exists (Mobile.NeedsPlacement) and IS now set by production
+//     code — MovePlayerTo, the Go form of Mobile.moveTo — but the
+//     gate is deliberately not consulted yet: it needs its own
+//     verification (a freshly placed player must still refuse
+//     same-tick walks exactly as TS does, and the login/bind
+//     setters are still unported), so it stays a gap. The field's
+//     live use is sync placement (visibility/flush), cleared by
+//     ResetUpdating.
 //   - INVALID via force movement (350-351):
-//     player.getForceMovement() (Player.ts:1203-1205). No
-//     ForceMovement field or system exists.
+//     player.getForceMovement() (Player.ts:1203-1205). Ported in
+//     Phase 40 (forcemovement.go): an active force movement
+//     reports INVALID here, silently, as in TS.
 //   - ANIMATION_STALL (361-362):
 //     player.getCombat().isAnimationStalled() (Combat.ts:238-240, a
 //     full stall only). Ported in Phase 16 (combat.go); the

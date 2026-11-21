@@ -259,6 +259,22 @@ type Player struct {
 	disconnectSource string
 	logoutHoldCycle  int64
 
+	// forceMovement is the player's active forced glide, or nil
+	// (Player.ts:187, forceMovement). Installed by
+	// ForceMovementTask; read through ForceMovement(), written
+	// through SetForceMovement (which flags Flag.FORCED_MOVEMENT
+	// when installing). Tick-goroutine-only. See forcemovement.go.
+	forceMovement *ForceMovement
+
+	// clickDelayCycle is the world process cycle of the most recent
+	// click-delay reset: the Go form of the getClickDelay
+	// TickStopwatch (Player.ts:123, clickDelay = new
+	// TickStopwatch()). -1 means "never" (NewPlayer initialises
+	// it; a zero-value Player reads 0, which only matters on cycle
+	// 0). The elapsed check is ClickDelayElapsed; the stamp is
+	// ResetClickDelay. Tick-goroutine-only. See forcemovement.go.
+	clickDelayCycle int64
+
 	// lastItemPickupCycle is the world process cycle of the most
 	// recent successful ground-item pickup: the Go form of the
 	// getLastItemPickup TickStopwatch
@@ -476,6 +492,7 @@ func NewPlayer(username string, loc Location) *Player {
 		Username:            username,
 		logoutHoldCycle:     -1,
 		lastItemPickupCycle: -1,
+		clickDelayCycle:     -1,
 		viewDistance:        PreferredViewDistance,
 		npcViewDistance:     NPCViewDistance,
 		running:             true,

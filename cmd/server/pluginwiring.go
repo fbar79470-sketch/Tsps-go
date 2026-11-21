@@ -20,6 +20,7 @@ import (
 	_ "tsps-go/internal/content/gracefuloutfit"
 	_ "tsps-go/internal/content/lumbridgeguide"
 	_ "tsps-go/internal/content/seekingarrows"
+	_ "tsps-go/internal/content/wildernessditch"
 	_ "tsps-go/internal/content/woodcutting"
 	_ "tsps-go/internal/content/wornweights"
 	"tsps-go/internal/game"

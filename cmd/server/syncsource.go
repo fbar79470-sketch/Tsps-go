@@ -132,6 +132,8 @@ func playerSnapshot(viewer, p *game.Player) session.SyncPlayerSnapshot {
 	block := appearanceBlock(p)
 	hits, health := hitSnapshots(viewer, &p.Mobile, p == viewer)
 	interaction := game.InteractionIndexFor(p.GetCombat().Interacting())
+	anim := animationView(&p.Mobile)
+	forcedMovement, forcedMovementEnd := forcedMovementViews(p, &anim)
 	return session.SyncPlayerSnapshot{
 		Identity:        p,
 		Index:           p.Index,
@@ -155,18 +157,69 @@ func playerSnapshot(viewer, p *game.Player) session.SyncPlayerSnapshot {
 		// (bots) recompute the fallback every tick; that is
 		// correct, if slightly wasteful, and there are no
 		// bots in production yet.
-		AppearanceFlag:   p.Flags.Has(game.FlagAppearance) || block == nil,
-		WalkingDx:        p.WalkingDirection.Dx(),
-		WalkingDy:        p.WalkingDirection.Dy(),
-		RunningDx:        p.RunningDirection.Dx(),
-		RunningDy:        p.RunningDirection.Dy(),
-		ForcedChat:       forcedChatText(&p.Mobile),
-		Animation:        animationView(&p.Mobile),
-		Graphics:         graphicViews(&p.Mobile),
-		Hits:             hits,
-		Health:           health,
-		InteractionIndex: &interaction,
+		AppearanceFlag:    p.Flags.Has(game.FlagAppearance) || block == nil,
+		WalkingDx:         p.WalkingDirection.Dx(),
+		WalkingDy:         p.WalkingDirection.Dy(),
+		RunningDx:         p.RunningDirection.Dx(),
+		RunningDy:         p.RunningDirection.Dy(),
+		ForcedChat:        forcedChatText(&p.Mobile),
+		Animation:         anim,
+		ForcedMovement:    forcedMovement,
+		ForcedMovementEnd: forcedMovementEnd,
+		Graphics:          graphicViews(&p.Mobile),
+		Hits:              hits,
+		Health:            health,
+		InteractionIndex:  &interaction,
 	}
+}
+
+// forcedMovementViews renders the player's forced-movement sync state
+// (PlayerSession.ts:742-789): the landing tile whenever a force
+// movement is active, the glide view only when Flag.FORCED_MOVEMENT
+// fired this tick, and the movement's animation as the animation view
+// when no animation is already set. anim is the already-computed
+// animation view; it is replaced (not appended to) by the movement's
+// animation, exactly as TS assigns updates.animation from the force
+// movement. A nil return for both values means no active force
+// movement.
+func forcedMovementViews(p *game.Player, anim **protocol.AnimationView) (*protocol.ForcedMovementView, *protocol.Tile) {
+	fm := p.ForceMovement()
+	if fm == nil {
+		return nil, nil
+	}
+	// The landing tile, present whenever a force movement is active
+	// (PlayerSession.ts:783-789): start + delta, same level.
+	end := &protocol.Tile{X: fm.Start.X + fm.Delta.X, Y: fm.Start.Y + fm.Delta.Y, Level: p.Loc.Z}
+	if !p.Flags.Has(game.FlagForcedMovement) {
+		return nil, end
+	}
+	loc := p.Loc
+	view := &protocol.ForcedMovementView{
+		StartDeltaX: fm.Start.X - loc.X,
+		StartDeltaY: fm.Start.Y - loc.Y,
+		// The end tile from the current one, as the start is: a slide
+		// whose player is already on its end tile (moved there the
+		// same tick, as live jumps a stepping stone) ends at 0.
+		EndDeltaX:        end.X - loc.X,
+		EndDeltaY:        end.Y - loc.Y,
+		StartCycleOffset: fm.Speed,
+		EndCycleOffset:   fm.ReverseSpeed,
+		Direction:        forcedMovementDirection(fm.Direction),
+	}
+	if *anim == nil && fm.Animation > 0 {
+		*anim = &protocol.AnimationView{ID: fm.Animation, Delay: 0}
+	}
+	return view, end
+}
+
+// forcedMovementDirection maps a ForceMovement direction (0 north,
+// 1 east, 2 south, 3 west) to the client facing (PlayerSession.ts:777:
+// [1024, 1536, 0, 512][direction] ?? direction).
+func forcedMovementDirection(d int) int {
+	if d >= 0 && d < 4 {
+		return [...]int{1024, 1536, 0, 512}[d]
+	}
+	return d
 }
 
 // npcSnapshot renders one NPC as a sync snapshot. Facing is the

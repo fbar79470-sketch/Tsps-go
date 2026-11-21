@@ -85,6 +85,24 @@ type SyncPlayerSnapshot struct {
 	// always-true, and the flush source knows the owner when
 	// relations state lands in milestone 9.
 	ForcedChat *string
+	// ForcedMovement is this tick's forced-movement glide, or nil
+	// when the player has none to send (PlayerSession.ts:766-782):
+	// present only when Flag.FORCED_MOVEMENT is set this tick AND
+	// the player has an active force movement. Start/end deltas
+	// are relative to the player's current tile; the cycle offsets
+	// are the movement's speed/reverseSpeed; the direction is the
+	// client facing ([1024, 1536, 0, 512] over the 0-3 cardinal
+	// direction). The flush source populates it from the player's
+	// ForceMovement state (see syncsource.go).
+	ForcedMovement *protocol.ForcedMovementView
+	// ForcedMovementEnd is the glide's landing tile, or nil when
+	// the player has no active force movement
+	// (PlayerSession.ts:783-789): present whenever a force
+	// movement is active, even on ticks where the flag did not
+	// fire — the movement pre-pass reads the player's position
+	// from it while gliding (sync.go). The flush source
+	// populates it alongside ForcedMovement.
+	ForcedMovementEnd *protocol.Tile
 	// Animation is this tick's animation (Mobile.animation,
 	// included in the update block only when Flag.ANIMATION
 	// is set and the animation is non-nil —
@@ -797,13 +815,15 @@ func (s *Session) createPlayerView(snap SyncPlayerSnapshot, forceAppearance bool
 		interaction = *snap.InteractionIndex
 	}
 	view := protocol.PlayerView{
-		Tile:            protocol.Tile{X: snap.X, Y: snap.Y, Level: snap.Z},
-		ActorUpdateView: protocol.ActorUpdateView{InteractionIndex: &interaction, ForcedChat: snap.ForcedChat, Animation: snap.Animation, Graphics: snap.Graphics},
-		Index:           snap.Index,
-		Appearance:      payload,
-		MovementType:    movementType,
-		ResetPath:       snap.NeedsPlacement,
-		AppearanceDirty: dirty,
+		Tile:              protocol.Tile{X: snap.X, Y: snap.Y, Level: snap.Z},
+		ActorUpdateView:   protocol.ActorUpdateView{InteractionIndex: &interaction, ForcedChat: snap.ForcedChat, Animation: snap.Animation, Graphics: snap.Graphics},
+		Index:             snap.Index,
+		Appearance:        payload,
+		MovementType:      movementType,
+		ResetPath:         snap.NeedsPlacement,
+		AppearanceDirty:   dirty,
+		ForcedMovement:    snap.ForcedMovement,
+		ForcedMovementEnd: snap.ForcedMovementEnd,
 	}
 	if len(snap.Hits) > 0 {
 		view.Hits = hitsplatViews(snap.Hits)

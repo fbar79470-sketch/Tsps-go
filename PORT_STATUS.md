@@ -28,6 +28,38 @@ all skills — see "Next modules".)
 
 ## What was verified in this run
 
+- Phase 40 (`go build ./...`, `go vet ./...`, `gofmt -l .`:
+  clean. `CGO_ENABLED=0 go build ./...`: clean. 768 `.go`
+  files, 23 packages (new `internal/content/wildernessditch`,
+  `internal/game/forcemovement.go`).
+- Phase 40 `go test ./... -p 1 -count=1 -v`: all 23 packages
+  pass (4,696 passing test cases: 3,548 top-level + 1,148
+  subtests, 0 failures, 0 skips — 4,678 from phase 39 + 18
+  new: 8 game ForceMovement/click-delay/mobility/OnStop, 8
+  wildernessditch resolveJump/guards/flow, 2 sync
+  forced-movement views; the temporary gap-11 probe test
+  was deleted after use).
+- Phase 40 `go test -race ./...`: passes clean, 23/23
+  packages, no data race — the phase-37-suspect
+  `combatant.go` `SetCombatCycleSource` race still does not
+  reproduce.
+- Live phase-40 smoke tests (throwaway harness in
+  `/home/hatch/smoke40/`, four modes driving a real
+  WebSocket client against the real server binary + real
+  rev-242 cache from a temp root outside the repo; legs run
+  singly): ditch-south PASS 4/4 (Cross on (3090,3521) from
+  (3089,3520) → landed (3090,3523), jump anim 6132 and sound
+  2462 delay 25 on the wire), ditch-north PASS 4/4 (Cross
+  from (3089,3523) → landed (3090,3520)), ditch-turn PASS
+  4/4 (Cross on (2996,3530) face 3 from (2995,3531) →
+  landed (2998,3530)), ditch-wall PASS (walked north without
+  Cross, stayed at (3089,3520)). Arrival-tile finding: a
+  diagonal corner tile does not reach a 1x2 solid
+  (`reachRectangle1`), so the player steps to the
+  side-adjacent tile before jumping and lands 3 tiles from
+  the arrival tile, not the click-time tile. Gap 11's wall
+  leg is RESOLVED by this phase: the clipped rows are the
+  ditch itself (probe evidence in gap 11).
 - `go build ./...`, `go vet ./...`, `gofmt -l .`: clean.
   `CGO_ENABLED=0 go build ./...`: clean. 761 `.go` files,
   21 packages (new `internal/session/gateway.go`).
@@ -600,7 +632,7 @@ all skills — see "Next modules".)
 | P2 | Interface runtime: `Player` interface id, `PacketSender` interface mounts, `InterfaceLayoutRegistry`, `InterfaceActionClickOpcode`, entered-amount/syntax prompts, the live varp/varbit store | `internal/game` (interface id + close gate, entered actions), `internal/session` (mount tracking + sender surface, varp store), `internal/definition` (layout open dispatch), `internal/listeners` (action dispatch, prompt answers, close case), `internal/plugins` (interface families), `cmd/server` (wiring) | DONE (phase 18, live-verified: interface open/close/layering + close-on-movement/logout/death + layout open dispatch on all 7 surfaces + action dispatch to hub hooks with prompt-first order + entered-amount/syntax prompts + varp/varbit store with change detection, varbit packing, and replay; session-only, nothing persists; `VarManager` transform plumbing, `registerCustomInterface`, bank interface flows, and the per-player vars seam are gaps — see notes) |
 | P2 | Clans/social: `PlayerRelations`, social-packet dispatch, friends-chat-snapshot + clan encoders | `internal/game` (relations, names, chat gate), `internal/protocol` (social decoders/encoders), `internal/session` (social senders), `internal/listeners` (social dispatch), `internal/persist` (relations ownership), `internal/plugins` (social-packet variants), `cmd/server` (wiring) | DONE (phase 19, live-verified: whole `PlayerRelations` port + live chat gate + all 8 social-packet kinds emitted to the hub + snapshot/clan encoders + relations owned save state + logout presence-offline; friends-chat channels + the clan system are plugin content (FriendsList/Clans, NOT ported — the engine unlocks them); the legacy friend/ignore presence sends are no-ops, exactly as in TS (`PlayerSession.write` is a no-op upstream) — live presence comes from the snapshot, which content sends; chat modes session-only — see notes) |
 | P3 | Plugin hub: `PluginManager`, `PluginTypes` | `internal/plugins` + `cmd/server` (`pluginwiring.go`) | DONE (compile-time registry, dependency-ordered loading, config-declaration validation, world.json switches, members-gating, lifecycle + custom-event + command/social-packet + object-interaction + dialogue + zone + combat + shop/trade + interface + skills + world-entity-interaction hooks with per-hook error isolation, gate contracts, scoped core surface, login extensions; the social-packet family fires all 8 kinds since phase 19 (same family, not a new one — the count is unchanged); onCanAttack became firable in phase 26; onSpellDisabled + onSpellRuneBypass became firable in phase 27; onShouldDropItemsOnDeath + onShouldKeepItemOnDeath + onPlayerDefeated + onPlayerDeathItemDrop + onPlayerDeathDrops became firable in phase 28 (51 of 108); the onItemAction family became firable in phase 32 (onItemAction/onItemActionNamed/onItemFirstAction/onCanUseItem, 54 of 108); the onNpcClick family became firable in phase 33 (onNpcClick, with the NPC remains-delay + transform seams in the death flow) and the onItemOnItem family became firable in phase 33 (onItemOnItem/onItemOnItemNamed, riding INVENTORY_USE_ON kind 4 — there is no separate item-on-item opcode), and the onNpcInteraction family became firable in phase 35 (onNpcInteraction, name hooks after the onNpcClick bindings — TS order, `NPCOptionPacketListener.ts:122/:132` — with the `DefinitionName`/`Action`/`Actions` fields on the hub event; `OnNpcsInteraction`/`OnAnyNpcInteraction`/`OnBeforeNpcInteraction`/`OnNpcRoute` stay table-only), 57 of 108; 51 of 108 hook families have no registration method yet — documented in the unfired-family table with the missing system named — and 29 of 95 non-hook members are ported, and 12 of 191 Core members — see notes; hub-count correction in phase 31: earlier versions of this document said 53/108, counting registration *methods* as *families* — Go has 61 `Api.On*` methods but four are named overloads of already-counted families (`OnObjectInteractionNamed`, `OnItemOnObjectNamed`, `OnItemActionNamed`, `OnItemOnItemNamed`), so 57 distinct families are firable (61 methods) and 51 are table-only; `hooks.go`'s header says fifty-seven (updated in phase 35; the phase-35 plan's "5 named overloads" was wrong — recount: exactly 4 `*Named` methods) |
-| P3 | All `plugins/` content (2,907 JS files, 789,355 lines) | Go packages under `internal/content/` | PARTIAL (10 of 577 entries ported: DateMinutes (phase 10), GracefulOutfit + WornWeights (phase 22), LumbridgeGuide (phase 23), SeekingArrows (phase 24), Woodcutting (phases 32–33 — core loop + all sub-units except the Guild, which needs Tyler's `woodcutting-guild.json` import approval), Fletching (phase 34 — full skill: Shared loop, Recipes, Spool, Diaries, CreationMenu seam, all live-verified), Fishing (phase 35 — core loop + 8 of 10 sub-units, MinnowPlatform / Gita exchange / Guild door deferred, live-verified in 4 modes), Cooking (phase 36 — full skill: Cookers, Recipes, Wine, Churn, SacredEel, LeapingFish, Gnome, live-verified on fire/range/wine legs), AdminCommands (phase 38 — `::item` only, the first registered command, live-verified: admin spawn + denial path), all live-verified; the rest per `CONTENT_MIGRATION_PLAN.md`, piece by piece with Tyler's direction; no wholesale port) |
+| P3 | All `plugins/` content (2,907 JS files, 789,355 lines) | Go packages under `internal/content/` | PARTIAL (11 of 577 entries ported: DateMinutes (phase 10), GracefulOutfit + WornWeights (phase 22), LumbridgeGuide (phase 23), SeekingArrows (phase 24), Woodcutting (phases 32–33 — core loop + all sub-units except the Guild, which needs Tyler's `woodcutting-guild.json` import approval), Fletching (phase 34 — full skill: Shared loop, Recipes, Spool, Diaries, CreationMenu seam, all live-verified), Fishing (phase 35 — core loop + 8 of 10 sub-units, MinnowPlatform / Gita exchange / Guild door deferred, live-verified in 4 modes), Cooking (phase 36 — full skill: Cookers, Recipes, Wine, Churn, SacredEel, LeapingFish, Gnome, live-verified on fire/range/wine legs), AdminCommands (phase 38 — `::item` only, the first registered command, live-verified: admin spawn + denial path), WildernessDitch (phase 40 — `Cross` on object 23271 with the ForceMovement glide + click delay, live-verified: south/north/turn crossings + the wall leg), all live-verified; the rest per `CONTENT_MIGRATION_PLAN.md`, piece by piece with Tyler's direction; no wholesale port) |
 | P3 | Bots: `plugins/bots/` + bot runtime | undecided | NOT STARTED |
 | P3 | WebRTC transport | undecided | NOT STARTED |
 | P3 | Browser host: `BrowserHostHttpBridge`, IndexedDB persistence | undecided | NOT STARTED |
@@ -3265,10 +3297,11 @@ pick is Tyler's. Verification counts are unchanged from phase 24
    in §2 is now EXHAUSTED: all 11 milestones are DONE. What
    remains is content ports (per the plan's §3
    recommendations, piece by piece, with Tyler's direction),
-   the two pre-existing map/routing findings (gap 11), the
-   residual gaps named in this document, and the HTTP/WebRTC
-   extras. RESOLVED (phase 28): poison/venom + skulls +
-   player death exist in Go (the poison clock + effect with
+   the surviving pre-existing map/routing findings (gap 11
+   — the y=3521–3522 wall leg is RESOLVED in phase 40: it
+   is the Wilderness Ditch), the residual gaps named in
+   this document, and the HTTP/WebRTC extras. RESOLVED
+   (phase 28): poison/venom + skulls + player death exist in Go (the poison clock + effect with
    the 258-entry data table, the orb varp, and save
    round-trip; the skull system with timer + icons + Protect
    Item interaction; the death flow with kept-items rules,
@@ -3321,36 +3354,44 @@ pick is Tyler's. Verification counts are unchanged from phase 24
     price line was RESOLVED in phase 18 (live through the
     varp store). The Wilderness drop check was
     RESOLVED in phase 15 (live, through the area system).
-11. Pre-existing map/routing findings, NOT fixed (both need
-    TS/cache grounding before any fix; both are out of scope
-    for phase 23): (a) the far-WALK bug recorded in
-    PHASE12_PLAN.md — a single WALK click over 64 tiles
-    routes nowhere (the Phase 4 route finder searches a
-    128×128 map centered on the source and the
+11. Pre-existing map/routing findings, NOT fixed (the
+    survivors need TS/cache grounding before any fix; both
+    are out of scope for phase 23): (a) the far-WALK bug
+    recorded in PHASE12_PLAN.md — a single WALK click over
+    64 tiles routes nowhere (the Phase 4 route finder
+    searches a 128×128 map centered on the source and the
     closest-approach fallback fails for far-outside
-    destinations); staged clicks work. (b) Found by the
-    phase 16 smoke test: two solid clipped rows at y=3521–
-    3522 spanning x=3038..3347 with no gate — a 300-tile
-    gateless wall that no real geography explains (the
-    rev-242 entry ships zero XTEA keys; undecryptable map
-    data is the prime suspect, unproven). Every walk from
-    the spawn side to the spider area south of it returns
-    zero waypoints; the smoke test went around it by
-    resuming from an edited save south of the wall. Do not
-    "fix" either by widening the search map or clearing
-    clipping without grounding in TS behavior. (c) Found by
-    the phase 27 smoke test, same family: the projectile
-    line from the spawn (3089,3524) to a goblin at (3086,3528)
-    is blocked — a magic attack selects, `CanReach` fails,
-    the combat routes east around the obstacle, the route
-    ends with no clear line, and the post-movement check
-    cancels with the TS-faithful "I can't reach that!". The
-    NE line to (3092,3520) in the same map region is clear
-    (the manual Wind Strike landed there), so the region is
-    loaded and the SW line hits a real map obstacle, not
-    unloaded data. No port bug found; the obstacle's identity
-    is map trivia, not investigated further. The smoke moved
-    the second goblin due east (3095,3524) and the autocast
+    destinations); staged clicks work. (b) RESOLVED in
+    phase 40 — the "gateless wall" found by the phase 16
+    smoke test (two solid clipped rows at y=3521–3522
+    spanning x=3038..3347) IS the Wilderness Ditch: a probe
+    against the real rev-242 cache (temporary test, since
+    deleted) showed def 23271 "Wilderness Ditch" (actions
+    ["Cross","","","",""], size 1x2, clipType 1) with 273
+    locs in the band y3521–3522, x3042..3327, faces 0 (81)
+    and 2 (192), all type 10; clip(3090,3521) =
+    clip(3090,3522) = 0x40100 (the exact flags phase 4
+    found), clip(3090,3520) = clip(3090,3523) = 0x0; the
+    turn section is 4 locs at (2996,3530–3533), face 3.
+    The zero-XTEA theory is dead: the rows are real ditch
+    objects, crossed only via the Cross interaction (phase
+    40 ported it — live-verified south/north/turn, and the
+    wall leg proves walking in without Cross still blocks).
+    Do not "fix" the far-WALK bug by widening the search
+    map or clearing clipping without grounding in TS
+    behavior. (c) Found by the phase 27 smoke test, same
+    family: the projectile line from the spawn (3089,3524)
+    to a goblin at (3086,3528) is blocked — a magic attack
+    selects, `CanReach` fails, the combat routes east
+    around the obstacle, the route ends with no clear line,
+    and the post-movement check cancels with the
+    TS-faithful "I can't reach that!". The NE line to
+    (3092,3520) in the same map region is clear (the manual
+    Wind Strike landed there), so the region is loaded and
+    the SW line hits a real map obstacle, not unloaded
+    data. No port bug found; the obstacle's identity is map
+    trivia, not investigated further. The smoke moved the
+    second goblin due east (3095,3524) and the autocast
     attack fired there.
 12. Phase 22 residual gaps (all documented at the port sites,
     none silent): (a) `equipment:effects` has no Go producer
@@ -3735,6 +3776,51 @@ pick is Tyler's. Verification counts are unchanged from phase 24
     in the smoke39 driver as the pen-access diagnostic (it
     FAILs by design).
 
+23. Phase 40 residual gaps (Wilderness Ditch; all
+    documented at the port sites, none silent): (a) The
+    ForceMovement execution path exists now
+    (`internal/game/forcemovement.go`: type, task, click
+    delay, mobility INVALID gate, sync view), but the ditch
+    is its ONLY consumer — no other ForceMovement
+    producers are ported (agility obstacles, knockbacks),
+    and there is no general ObstacleRunner. The forced-walk
+    area fallback (`requestWalk` 406-413,
+    `area.handleForcedWalk`) is still absent, and
+    `Player.Busy()` still does not exist (Go has no Busy();
+    the object-action listener's `busy()` still
+    degenerates to the hitpoints term — the ditch does not
+    need it). (b) The needsPlacement INVALID gate
+    (`MovementQueue.ts:350-351`) is still not consulted in
+    `getMobilityIgnoringFreeze` — deliberate, needs its own
+    verification; `MovePlayerTo` now sets NeedsPlacement,
+    so the field is live, but the gate stays a gap. (c) No
+    Wilderness entry warning or dialogue exists — checked:
+    neither `WildernessDitch.plugin.js` nor
+    `Wilderness.plugin.js` has one, so first entry is
+    silent in TS too; nothing to port. (d) The click-delay
+    gate reads the world cycle through the existing
+    `combatCycle()` source — no second cycle source was
+    added (see `forcemovement.go`); a second Cross within
+    250 ms is consumed silently (unit-covered; the live
+    legs cross once each). (e) Live legs (smoke40, real
+    rev-242 cache, run singly): ditch-south PASS 4/4
+    (landed (3090,3523), anim 6132, sound 2462 delay 25),
+    ditch-north PASS 4/4 (landed (3090,3520)),
+    ditch-turn PASS 4/4 (landed (2998,3530)), ditch-wall
+    PASS (walked north without Cross, stayed
+    (3089,3520)). Arrival-tile finding, verified live: a
+    diagonal corner tile does NOT reach a 1x2 solid
+    (`reachRectangle1` — only side-adjacent tiles reach),
+    so the player steps to the side-adjacent arrival tile
+    before jumping, and lands 3 tiles from the ARRIVAL
+    tile, not from the click-time tile; the turn leg's
+    north-adjacent tile (2996,3531) is itself a ditch piece
+    (walled), so its arrival is the west side (2995,3530).
+    (f) `Task.OnStop` is a new general mechanism (fires
+    once, only via `Stop()`, never when a task finishes by
+    returning done) — only ForceMovementTask uses it so
+    far.
+
 ## Next modules, in priority order
 
 1. The engine-systems plan in `CONTENT_MIGRATION_PLAN.md`
@@ -3852,8 +3938,10 @@ pick is Tyler's. Verification counts are unchanged from phase 24
    root-location term, camera state, `VarManager`,
    destroy-hook splicing) are fixed only when a content
    piece needs them, grounded in TS first.
-2. The two pre-existing map/routing findings (gap 11:
-   far-WALK, y=3521–3522 wall) stay out of scope until
-   TS/cache grounding exists for a fix.
+2. The surviving pre-existing map/routing findings (gap 11:
+   far-WALK, and the phase-27 projectile-line obstacle) stay
+   out of scope until TS/cache grounding exists for a fix.
+   The y=3521–3522 wall leg is RESOLVED in phase 40 (it is
+   the Wilderness Ditch).
 3. HTTP extras (`ContentApi`, `/regions` — `GatewayTarget`
    DONE in phase 37), then WebRTC (needs a Go stack + relay port) if required.
