@@ -214,3 +214,104 @@ type panicRuneSource struct{}
 
 func (panicRuneSource) Check(*game.Player, []game.Item) bool { panic("boom") }
 func (panicRuneSource) Consume(*game.Player, []game.Item)    {}
+
+// TestOnSpellOnItemEmit covers the onSpellOnItem family in
+// spells.go, grounded in PluginManager.emitSpellOnItem
+// (PluginManager.ts:1975-1984) and the registration guard
+// (PluginManager.ts:4225-4235): the slot/id guard claims a
+// stale slot with no hook run, the first claim wins, a
+// non-matching cast falls through, and nil inputs are safe.
+// Fixtures only.
+func TestOnSpellOnItemEmit(t *testing.T) {
+	h, _ := newTestHub()
+	player := testPlayer("caster")
+	player.Inventory().Adds(440, 1) // iron ore, slot 0
+	player.Inventory().Adds(453, 1) // coal, slot 1
+
+	calls := 0
+	newApi(h, "Superheat").OnSpellOnItem(func(ev *SpellOnItemEvent) {
+		calls++
+		if ev.Player != player || ev.SpellName != "Superheat Item" || ev.ItemID != 440 || ev.Slot != 0 {
+			t.Errorf("event = %+v, want player + Superheat Item + iron ore slot 0", ev)
+		}
+		ev.Handled = true
+	})
+	newApi(h, "Second").OnSpellOnItem(func(*SpellOnItemEvent) {
+		calls++
+	})
+
+	// A matching cast is claimed by the first hook; the
+	// second hook never runs.
+	ev := &SpellOnItemEvent{Player: player, SpellName: "Superheat Item", SpellWidget: 1151, ItemID: 440, Slot: 0}
+	if !h.EmitSpellOnItem(ev) {
+		t.Fatal("EmitSpellOnItem = false, want true (first hook claimed it)")
+	}
+	if !ev.Handled || calls != 1 {
+		t.Fatalf("handled = %v calls = %d, want true/1 (first claim wins)", ev.Handled, calls)
+	}
+
+	// A cast the hook does not match falls through: the hook
+	// runs but does not claim, and the second hook's run
+	// proves the loop did not short-circuit early.
+	ev2 := &SpellOnItemEvent{Player: player, SpellName: "Superheat Item", ItemID: 453, Slot: 1}
+	// The hook above claims only iron ore, so rebuild the hub
+	// with a hook that records without claiming.
+	h2, _ := newTestHub()
+	seen := 0
+	newApi(h2, "Watcher").OnSpellOnItem(func(ev *SpellOnItemEvent) {
+		seen++
+		if ev.ItemID != 453 || ev.Slot != 1 {
+			t.Errorf("event = %+v, want coal slot 1", ev)
+		}
+	})
+	if h2.EmitSpellOnItem(ev2) {
+		t.Fatal("EmitSpellOnItem = true, want false (no hook claimed the coal cast)")
+	}
+	if seen != 1 {
+		t.Fatalf("seen = %d, want 1", seen)
+	}
+
+	// The slot guard claims a stale slot with no hook run
+	// (slot 0 holds iron ore, not coal).
+	if !h2.EmitSpellOnItem(&SpellOnItemEvent{Player: player, SpellName: "Superheat Item", ItemID: 453, Slot: 0}) {
+		t.Fatal("EmitSpellOnItem = false, want true (slot guard claims a stale slot)")
+	}
+	if seen != 1 {
+		t.Fatalf("seen = %d, want 1 (guard runs no hooks)", seen)
+	}
+	// Out-of-range slot, nil player, nil event, nil hub.
+	if !h2.EmitSpellOnItem(&SpellOnItemEvent{Player: player, ItemID: 440, Slot: 28}) {
+		t.Fatal("EmitSpellOnItem = false, want true (out-of-range slot)")
+	}
+	if !h2.EmitSpellOnItem(&SpellOnItemEvent{Player: nil, ItemID: 440, Slot: 0}) {
+		t.Fatal("EmitSpellOnItem = false, want true (nil player)")
+	}
+	if h2.EmitSpellOnItem(nil) {
+		t.Fatal("EmitSpellOnItem(nil) = true, want false")
+	}
+	var nilHub *Hub
+	if nilHub.EmitSpellOnItem(ev) {
+		t.Fatal("nil hub EmitSpellOnItem = true, want false")
+	}
+	// A nil handler and a post-load registration are ignored.
+	newApi(h2, "Nil").OnSpellOnItem(nil)
+}
+
+func TestOnSpellOnItemRegistrationGuard(t *testing.T) {
+	h, _ := newTestHub()
+	player := testPlayer("caster")
+	player.Inventory().Adds(440, 1)
+	// The wrapper skips events without a player or already
+	// handled, exactly as the TS guard does.
+	ran := 0
+	newApi(h, "Guarded").OnSpellOnItem(func(*SpellOnItemEvent) { ran++ })
+	h.EmitSpellOnItem(&SpellOnItemEvent{Player: nil, ItemID: 440, Slot: 0})
+	h.EmitSpellOnItem(&SpellOnItemEvent{Player: player, ItemID: 440, Slot: 0, Handled: true})
+	if ran != 0 {
+		t.Fatalf("ran = %d, want 0 (guard skips player-less and handled events)", ran)
+	}
+	h.EmitSpellOnItem(&SpellOnItemEvent{Player: player, ItemID: 440, Slot: 0})
+	if ran != 1 {
+		t.Fatalf("ran = %d, want 1", ran)
+	}
+}

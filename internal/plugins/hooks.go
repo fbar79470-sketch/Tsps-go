@@ -8,7 +8,7 @@
 // The PluginApi interface (PluginTypes.ts:999-1559) declares 108 distinct
 // hook families (on* methods; four have two overloads each and count once:
 // onObjectInteraction, onItemOnObject, onItemOnItem,
-// onItemAction). Fifty-eight get a registration method: the six lifecycle
+// onItemAction). Fifty-nine get a registration method: the six lifecycle
 // families below (Hub.Emit* methods in this file; the coordinator wires
 // the production call sites) plus onCustomEvent (events.go), onCommand
 // (api.go; fired by the command registry through Hub.EmitCommandHooks,
@@ -55,7 +55,10 @@
 // in spells.go (onSpellDisabled, fired from Spell.canCast through the
 // game-side CombatHooks.SpellDisabled seam, and onSpellRuneBypass, fired from
 // Spell.itemsToConsume and the MagicOnItem listener through the
-// CombatHooks.SpellRuneBypass seam — both phase 27, via cmd/server wiring), the two shop families
+// CombatHooks.SpellRuneBypass seam — both phase 27, via cmd/server wiring), plus
+// onSpellOnItem in the same file (phase 43: fired from castSpellOnItem in the
+// MagicOnItem listener through the listeners' SpellHooks.EmitSpellOnItem seam,
+// wired in cmd/server/spellwiring.go; Superheat Item is its first consumer), the two shop families
 // in shops.go (onCanShop, fired from ShopManager.open through the
 // game-side shop seam; onCanStockItem, fired per stock entry at
 // shop-definition load, after Hub.Load — see shops.go), the three
@@ -81,7 +84,7 @@
 // item-action families in itemaction.go (onItemAction,
 // onItemFirstAction, onCanUseItem; fired by the item-action
 // listener through the cmd/server adapter — see itemaction.go).
-// The other 51 get NO registration method this phase.
+// The other 50 get NO registration method this phase.
 // Each is listed below with the missing engine system named. A family
 // gets a method only when its event type can be honestly typed AND an
 // emit site exists or is imminent; no family is silently dropped — if
@@ -229,14 +232,16 @@
 // NPC spawn gate — spawns apply eagerly with no gate call site:
 // `onCanSpawnNpc`.
 //
-// Item-on-X, spells & item actions — the spell system is NOT STARTED and
-// the drop listener calls no hub emit: `onItemOnPlayer`,
-// `onItemOnGroundItem`, `onSpellOnItem`, `onSpellCast`,
-// `onItemDropPolicy`. (`onItemAction` and `onItemFirstAction` are
-// ported in itemaction.go, fired by the item-action listener
-// through the cmd/server adapter; `onItemOnItem` is ported in
-// itemonitem.go, fired by the inventory-use-on listener through
-// the cmd/server adapter.)
+// Item-on-X, spells & item actions — the spell-on-object
+// family has no emit site and the drop listener calls no hub
+// emit: `onItemOnPlayer`, `onItemOnGroundItem`, `onSpellCast`,
+// `onItemDropPolicy`. (`onSpellOnItem` is ported in spells.go,
+// fired from castSpellOnItem through the listeners'
+// SpellHooks.EmitSpellOnItem seam; `onItemAction` and
+// `onItemFirstAction` are ported in itemaction.go, fired by
+// the item-action listener through the cmd/server adapter;
+// `onItemOnItem` is ported in itemonitem.go, fired by the
+// inventory-use-on listener through the cmd/server adapter.)
 //
 // Ground-item clicks — GroundItemManager and the pickup listener exist but
 // call no hub emit: `onGroundItemClick`, `onGroundItemPickup`.
@@ -541,6 +546,7 @@ type hookRegistry struct {
 	spellDisabled    []hookEntry[*SpellDisabledEvent]
 	spellRuneBypass  []hookEntry[*SpellRuneBypassEvent]
 	spellRuneSources []spellRuneSourceEntry
+	spellOnItem      []hookEntry[*SpellOnItemEvent]
 
 	// Shop and trade hooks (see shops.go, trades.go): the
 	// can-shop / can-stock-item gates and the can-trade /

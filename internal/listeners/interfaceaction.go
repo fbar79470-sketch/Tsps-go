@@ -55,11 +55,11 @@
 //
 // The widget_target case closes interruptible interfaces when
 // the target is the inventory group (NetworkBuilder.ts:1181),
-// then runs the spell-on-item routes (LunarSpells,
-// emitSpellOnItem, MAGIC_ITEMS.castOnItem — all NOT STARTED,
-// so all read false) and falls through to the opcode handle
-// with the target widget as the button id and the source slot
-// as the action. The local_trigger cases map the opcode
+// then runs the spell-on-item routes (LunarSpells reads false
+// — a gap — emitSpellOnItem fires since phase 43, and
+// MAGIC_ITEMS.castOnItem handles the alchemy spells) and falls
+// through to the opcode handle with the target widget as the
+// button id and the source slot as the action. The local_trigger cases map the opcode
 // parameter 1..10 to the action with the child index as both
 // child id and slot, and every other parameter to a script
 // trigger with action 0 (NetworkBuilder.ts:1261-1281).
@@ -483,10 +483,11 @@ func routeWidgetTarget(p *game.Player, msg protocol.WidgetTarget, cycle int64, d
 	if onInventory {
 		p.CloseInterruptibleInterfaces()
 	}
-	// Spell routes (lines 1182-1204): LunarSpells and
-	// emitSpellOnItem read false (gaps — see castSpellOnItem
-	// in magicitem.go); a claimed alchemy cast counts as
-	// acted and skips the handle below. cycle is the current
+	// Spell routes (lines 1182-1204): LunarSpells reads false
+	// (a gap — see castSpellOnItem in magicitem.go);
+	// emitSpellOnItem fires since phase 43 and a claimed
+	// spell click counts as acted and skips the handle below,
+	// as does a claimed alchemy cast. cycle is the current
 	// world process cycle, for the alchemy pacing stamps.
 	if onInventory && castSpellOnItem(p, msg, cycle, deps) {
 		return acted()

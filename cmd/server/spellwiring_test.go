@@ -6,6 +6,7 @@ import (
 	"tsps-go/internal/game"
 	"tsps-go/internal/listeners"
 	"tsps-go/internal/persist"
+	"tsps-go/internal/plugins"
 	"tsps-go/internal/session"
 )
 
@@ -124,7 +125,7 @@ func TestSnapshotWritesLiveAutocastSpell(t *testing.T) {
 // four it touches.
 func TestInstallSpellListeners(t *testing.T) {
 	// Nil deps: no panic.
-	InstallSpellListeners(nil, nil, nil)
+	InstallSpellListeners(nil, nil, nil, nil)
 
 	prevDisabled, prevBypass := game.Hooks.SpellDisabled, game.Hooks.SpellRuneBypass
 	prevCheck, prevConsume := game.Hooks.CheckSpellRuneSource, game.Hooks.ConsumeSpellRuneSource
@@ -136,7 +137,10 @@ func TestInstallSpellListeners(t *testing.T) {
 	game.Hooks.CheckSpellRuneSource, game.Hooks.ConsumeSpellRuneSource = nil, nil
 
 	var deps listeners.Deps
-	InstallSpellListeners(&deps, nil, nil)
+	InstallSpellListeners(&deps, nil, nil, nil)
+	if deps.SpellHooks.EmitSpellOnItem != nil {
+		t.Fatal("EmitSpellOnItem wired with nil hub")
+	}
 	if deps.SpellHooks.SpellName != nil {
 		t.Fatal("SpellName wired with nil definitions")
 	}
@@ -195,7 +199,7 @@ func TestInstallSpellListeners(t *testing.T) {
 	// is visible to the world's TaskManager.
 	w := game.NewWorld(game.Location{X: 3200, Y: 3200, Z: 0})
 	var deps2 listeners.Deps
-	InstallSpellListeners(&deps2, nil, w)
+	InstallSpellListeners(&deps2, nil, nil, w)
 	if deps2.SpellHooks.ScheduleTask == nil {
 		t.Fatal("ScheduleTask nil with a world")
 	}
@@ -204,5 +208,42 @@ func TestInstallSpellListeners(t *testing.T) {
 	w.Tasks().Process(0)
 	if !ran {
 		t.Fatal("scheduled task did not run on the world tick")
+	}
+
+	// A hub wires the spell-on-item emit through to the hub
+	// family: a hook claiming the cast reads back handled,
+	// and a non-matching cast falls through unclaimed.
+	hub := plugins.NewHub([]plugins.Plugin{{
+		Name: "SuperheatProbe",
+		Register: func(api *plugins.Api) {
+			api.OnSpellOnItem(func(ev *plugins.SpellOnItemEvent) {
+				if ev.SpellName == "Superheat Item" && ev.ItemID == 440 {
+					ev.Handled = true
+				}
+			})
+		},
+	}}, plugins.HubOptions{Logger: discardLogger()})
+	hub.Load()
+	var deps3 listeners.Deps
+	InstallSpellListeners(&deps3, hub, nil, nil)
+	if deps3.SpellHooks.EmitSpellOnItem == nil {
+		t.Fatal("EmitSpellOnItem nil with a hub")
+	}
+	p2 := game.NewPlayer("caster2", game.Location{X: 3200, Y: 3200, Z: 0})
+	p2.Inventory().Adds(440, 1)
+	p2.Inventory().Adds(453, 1)
+	if !deps3.SpellHooks.EmitSpellOnItem(&listeners.SpellOnItemEvent{Player: p2, SpellName: "Superheat Item", ItemID: 440, Slot: 0}) {
+		t.Fatal("EmitSpellOnItem = false, want true (hook claimed the superheat cast)")
+	}
+	// A cast the hook does not match falls through unclaimed
+	// (coal in slot 1, not the iron ore the hook wants).
+	if deps3.SpellHooks.EmitSpellOnItem(&listeners.SpellOnItemEvent{Player: p2, SpellName: "Superheat Item", ItemID: 453, Slot: 1}) {
+		t.Fatal("EmitSpellOnItem = true, want false (hook matches iron ore only)")
+	}
+	// A stale slot (the slot no longer holds the named item)
+	// is claimed by the emit's slot guard, as TS returns true
+	// there — the click never reaches castOnItem.
+	if !deps3.SpellHooks.EmitSpellOnItem(&listeners.SpellOnItemEvent{Player: p2, SpellName: "Superheat Item", ItemID: 453, Slot: 0}) {
+		t.Fatal("EmitSpellOnItem = false, want true (slot 0 holds iron ore, not coal)")
 	}
 }

@@ -19,14 +19,11 @@ func TestEngineTicksAtRate(t *testing.T) {
 	if n < 5 || n > 30 {
 		t.Fatalf("TickCount = %d over ~60ms at 5ms rate, want 5..30 (timing tolerance)", n)
 	}
-	// TickCount increments when a tick starts; Stop does not wait for a
-	// tick already in flight, so allow it a moment to land.
-	deadline := time.Now().Add(200 * time.Millisecond)
-	for count.Load() != n && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
+	// Stop waits for a tick already in flight (engine.go), so the
+	// process count must already equal TickCount on return — this
+	// is the regression check for the 2026-11-21 race fix.
 	if count.Load() != n {
-		t.Fatalf("process calls = %d, TickCount = %d", count.Load(), n)
+		t.Fatalf("process calls = %d, TickCount = %d (Stop must wait for the in-flight tick)", count.Load(), n)
 	}
 }
 

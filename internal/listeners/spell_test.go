@@ -723,3 +723,95 @@ func TestAlchemy(t *testing.T) {
 		}
 	})
 }
+
+// TestCastSpellOnItemHookDispatch covers the phase-43
+// onSpellOnItem dispatch in castSpellOnItem
+// (NetworkBuilder.ts:1182-1204): a hook claiming the cast
+// consumes the click before the listener's own cast route
+// runs, a non-matching cast falls through to alchemy
+// unchanged, and a nil seam reads as no hooks wired.
+// Fixtures only.
+func TestCastSpellOnItemHookDispatch(t *testing.T) {
+	const ironOre = 440
+	msg := func(spellName string, targetID, slot int) protocol.WidgetTarget {
+		return protocol.WidgetTarget{
+			SourceWidgetID: int32(192<<16 | 30),
+			SourceItemID:   0,
+			TargetItemID:   targetID,
+			TargetSlot:     slot,
+		}
+	}
+	depsWithHook := func(claim func(ev *SpellOnItemEvent) bool) Deps {
+		deps := Deps{}
+		deps.SpellHooks.SpellName = func(widgetID, itemID int) (string, bool) {
+			return "Superheat Item", true
+		}
+		deps.SpellHooks.EmitSpellOnItem = func(ev *SpellOnItemEvent) bool {
+			return claim(ev)
+		}
+		return deps
+	}
+
+	t.Run("hook claim consumes the click before alchemy", func(t *testing.T) {
+		p, _ := spellTestPlayer(43)
+		p.SetRegistered(true)
+		p.Inventory().Adds(ironOre, 1)
+		p.Inventory().Adds(runeFireID, 4)
+		p.Inventory().Adds(runeNatureID, 1)
+		slot := findSlot(p, ironOre)
+		seen := 0
+		deps := depsWithHook(func(ev *SpellOnItemEvent) bool {
+			seen++
+			if ev.Player != p || ev.SpellName != "Superheat Item" || ev.ItemID != ironOre || ev.Slot != slot || ev.Cycle != 9 {
+				t.Errorf("event = %+v, want player + Superheat Item + iron ore slot %d cycle 9", ev, slot)
+			}
+			ev.Handled = true
+			return true
+		})
+		if !castSpellOnItem(p, msg("Superheat Item", ironOre, slot), 9, deps) {
+			t.Fatal("castSpellOnItem = false, want true (hook claimed the cast)")
+		}
+		if seen != 1 {
+			t.Fatalf("hook calls = %d, want 1", seen)
+		}
+		// The runes are untouched: the hook owns the cast, and
+		// the listener's alchemy route never ran for it.
+		if got := p.Inventory().GetAmount(runeFireID); got != 4 {
+			t.Fatalf("fire runes = %d, want 4 (hook's cast, not alchemy's)", got)
+		}
+	})
+
+	t.Run("non-matching cast falls through to alchemy", func(t *testing.T) {
+		p, _, schedule := func() (*game.Player, *capturingSession, *fakeSchedule) {
+			pp, s := spellTestPlayer(55)
+			pp.SetRegistered(true)
+			pp.Inventory().Adds(itemPlain, 2)
+			pp.Inventory().Adds(runeNatureID, 2)
+			pp.Inventory().Adds(runeFireID, 10)
+			return pp, s, &fakeSchedule{}
+		}()
+		slot := findSlot(p, itemPlain)
+		deps := depsWithHook(func(ev *SpellOnItemEvent) bool { return false })
+		deps.SpellHooks.SpellName = func(widgetID, itemID int) (string, bool) {
+			return "Low Level Alchemy", true
+		}
+		deps.SpellHooks.ScheduleTask = schedule.schedule
+		if !castSpellOnItem(p, msg("Low Level Alchemy", itemPlain, slot), 7, deps) {
+			t.Fatal("castSpellOnItem = false, want true (alchemy took the unclaimed cast)")
+		}
+		if got := p.Inventory().GetAmount(itemCoinsID); got != 60 {
+			t.Fatalf("coins = %d, want 60 (low alchemy paid)", got)
+		}
+	})
+
+	t.Run("nil seam reads as no hooks wired", func(t *testing.T) {
+		p, _ := spellTestPlayer(43)
+		p.SetRegistered(true)
+		p.Inventory().Adds(ironOre, 1)
+		// No SpellName seam and no EmitSpellOnItem: the spell
+		// resolves to nothing, so the click falls through.
+		if castSpellOnItem(p, msg("Superheat Item", ironOre, 0), 7, Deps{}) {
+			t.Fatal("castSpellOnItem = true, want false (no hooks, no resolvable spell)")
+		}
+	})
+}

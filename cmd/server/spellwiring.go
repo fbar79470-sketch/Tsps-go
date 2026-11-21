@@ -5,6 +5,7 @@ import (
 	"tsps-go/internal/game"
 	"tsps-go/internal/listeners"
 	"tsps-go/internal/persist"
+	"tsps-go/internal/plugins"
 )
 
 // Spellbook and autocast login restore: the cmd/server adapter
@@ -52,15 +53,17 @@ func restoreEntryAutocast(p *game.Player, carried *persist.PlayerSave) {
 // (listeners.SpellHooks, see internal/listeners/spellhooks.go)
 // for a player entering the world: the cache spell-name
 // lookup, the spellbook read, the combat spell cast, the
-// rune/disabled gates, and the tick-task scheduling for
-// delayed spell effects. Called once per entering player in
+// spell-on-item hook emit, the rune/disabled gates, and the
+// tick-task scheduling for delayed spell effects. Called once per entering player in
 // AddPlayer, next to InstallCombatListeners. Every seam is
 // nil-safe: a nil definitions facade skips the cache-name
 // fallback (ids resolve by id only), a nil world leaves the
-// task seam unset (delayed spell effects cannot run), and the
-// gate adapters read the game.Hooks spell fields at call time
-// (populated by InstallCombatHooks in buildServer) so a hub
-// installed after this call still takes effect.
+// task seam unset (delayed spell effects cannot run), a nil
+// hub leaves the spell-on-item emit unset (no hooks are
+// wired), and the gate adapters read the game.Hooks spell
+// fields at call time (populated by InstallCombatHooks in
+// buildServer) so a hub installed after this call still takes
+// effect.
 //
 // EmitSpellOnNpc is deliberately left unset: the Go hub has
 // no onSpellOnNpc family (PluginManager.emitSpellOnNpc,
@@ -69,9 +72,29 @@ func restoreEntryAutocast(p *game.Player, carried *persist.PlayerSave) {
 // default. The listener casts are standard-book casts, so the
 // gate adapters pass SpellbookNormal; alchemy/telegrab carry
 // no CombatSpell, so SpellDisabled receives nil for the spell.
-func InstallSpellListeners(deps *listeners.Deps, defs *cache.CacheDefinitions, world *game.World) {
+func InstallSpellListeners(deps *listeners.Deps, hub *plugins.Hub, defs *cache.CacheDefinitions, world *game.World) {
 	if deps == nil {
 		return
+	}
+	if hub != nil {
+		deps.SpellHooks.EmitSpellOnItem = func(ev *listeners.SpellOnItemEvent) bool {
+			if ev == nil {
+				return false
+			}
+			hubEvent := &plugins.SpellOnItemEvent{
+				Player:      ev.Player,
+				SpellName:   ev.SpellName,
+				SpellWidget: ev.SpellWidget,
+				SpellItemID: ev.SpellItemID,
+				ItemID:      ev.ItemID,
+				Slot:        ev.Slot,
+				Cycle:       ev.Cycle,
+				Handled:     ev.Handled,
+			}
+			handled := hub.EmitSpellOnItem(hubEvent)
+			ev.Handled = hubEvent.Handled
+			return handled
+		}
 	}
 	if defs != nil {
 		deps.SpellHooks.SpellName = func(widgetID, itemID int) (string, bool) {

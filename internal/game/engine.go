@@ -60,6 +60,8 @@ type Engine struct {
 	cancel  context.CancelFunc
 	done    chan struct{}
 
+	ticks sync.WaitGroup // ticks in flight (spawned by fire, finished by runTick)
+
 	inProgress atomic.Bool
 	attempts   atomic.Int64 // TS tickNumber: increments per firing, skips included.
 	executed   atomic.Int64 // Ticks actually started.
@@ -108,10 +110,14 @@ func (e *Engine) Start(ctx context.Context) {
 }
 
 // Stop ends the tick schedule and waits for the scheduler goroutine to
-// exit. A tick already in flight runs to completion (Stop does not wait
-// for it); the process function must therefore tolerate running briefly
-// past Stop, exactly as a TS tick in flight past shutdown would. Stop is
-// safe to call when the Engine is not running.
+// exit and for a tick already in flight to finish. Waiting matters:
+// boot installs package-level sources (combat cycle/clipping,
+// aggression bridge, sequence sources) that the tick path reads, and
+// the next server build rewrites them — a tick outliving Stop would
+// race those writes (reproduced 2026-11-21 in cmd/server race runs:
+// SetCombatCycleSource / SetAggressionCombatBridge vs an in-flight
+// tick from the previous test server). Stop is safe to call when the
+// Engine is not running.
 func (e *Engine) Stop() {
 	e.mu.Lock()
 	if !e.running {
@@ -123,6 +129,7 @@ func (e *Engine) Stop() {
 	e.mu.Unlock()
 	cancel()
 	<-done
+	e.ticks.Wait()
 	e.mu.Lock()
 	e.running = false
 	e.cancel = nil
@@ -182,10 +189,12 @@ func (e *Engine) fire() {
 		return
 	}
 	e.executed.Add(1)
+	e.ticks.Add(1)
 	go e.runTick(tick)
 }
 
 func (e *Engine) runTick(tick int64) {
+	defer e.ticks.Done()
 	defer e.inProgress.Store(false)
 	defer func() {
 		if r := recover(); r != nil {

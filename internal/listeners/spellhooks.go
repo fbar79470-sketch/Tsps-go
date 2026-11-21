@@ -105,6 +105,12 @@ type SpellHooks struct {
 	// 1967-1973) for a scripted cast, reporting whether a
 	// hook claimed it. Nil means no hooks are wired.
 	EmitSpellOnNpc func(ev *SpellOnNpcEvent) bool
+	// EmitSpellOnItem runs the onSpellOnItem hook family
+	// (PluginManager.emitSpellOnItem, PluginManager.ts:
+	// 1975-1984) for a spell cast on an inventory item,
+	// reporting whether a hook claimed it. Nil means no
+	// hooks are wired.
+	EmitSpellOnItem func(ev *SpellOnItemEvent) bool
 	// SpellRuneBypass is the onSpellRuneBypass first-answer
 	// gate (PluginManager.emitSpellRuneBypass,
 	// PluginManager.ts:1851-1876; contract C3). The
@@ -171,6 +177,25 @@ type SpellOnNpcEvent struct {
 	// runes/level check fails).
 	ConsumeRunes func() bool
 	Handled      bool
+}
+
+// SpellOnItemEvent is the listener-facing form of the onSpellOnItem
+// hook event (NetworkBuilder.ts:1188-1198, emitSpellOnItem): the
+// caster, the cache spell name ("" when the cache has none), the
+// spell's widget and item ids, the target item and its slot, and
+// the world cycle the click arrived on. A hook sets Handled to
+// claim the cast; the listener's own cast route is then skipped.
+// Cycle is the pacing clock handlers read (Superheat's 3-tick
+// pace); 0 when the caller has none.
+type SpellOnItemEvent struct {
+	Player      *game.Player
+	SpellName   string
+	SpellWidget int
+	SpellItemID int
+	ItemID      int
+	Slot        int
+	Cycle       int64
+	Handled     bool
 }
 
 // spellNameOf resolves the cache spell name for a click through

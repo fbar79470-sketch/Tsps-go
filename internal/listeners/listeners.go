@@ -201,10 +201,12 @@ const (
 	// (NetworkBuilder.ts lines 1173-1216). The interface-action
 	// fallback is implemented (phase 18, routeWidgetTarget) and
 	// the alchemy spell-on-item route is implemented (phase 27,
-	// magicitem.go: Low/High Alchemy via castOnItem); this
+	// magicitem.go: Low/High Alchemy via castOnItem), and the
+	// onSpellOnItem hook family fires since phase 43
+	// (castSpellOnItem dispatches it before castOnItem); this
 	// reason now means the fallback ran unclaimed while the
-	// remaining spell-on-item routes (LunarSpells,
-	// emitSpellOnItem, the other EffectSpells) are NOT STARTED.
+	// remaining spell-on-item routes (LunarSpells, the other
+	// EffectSpells) are NOT STARTED.
 	ReasonWidgetTarget DropReason = "spell-on-item handling (MagicOnItem) for a non-alchemy spell — NOT STARTED; the interface-action fallback ran unclaimed"
 	// A varp_transmit (opcode 191) whose varpId is not 43, 172
 	// or 173. The dispatch case (NetworkBuilder.ts lines
@@ -1766,7 +1768,7 @@ func Statuses() []Status {
 		{
 			Listener: "InterfaceActionClickOpcode",
 			Opcodes:  "251 (WIDGET_ACTION) + native 13, 89, 91, 23, 25, 31, 63, 69, 11, 14, 19, 20, 84 (IF_BUTTON family) + 90 (IF_BUTTONT, fallback) + 30 (IF_TRIGGEROPLOCAL) + the dialogue_continue pre-branch (62/252); helper, not a registered listener — called from the widget_action/widget_target/local_trigger/dialogue_continue dispatch cases",
-			Action:   "implemented: dead/busy/teleport gates (teleport degenerates to pass: no teleport system), BUSY_MESSAGE refusal via the hub refuseWhileBusy set, prompt-first hub emit (onInterfaceActionClick/onInterfaceActionButton, one list in registration order, handled short-circuit) from the widget-action fallthrough (a handled click skips the dialogue tail), the widget-target fallback (inventory-group close first), local triggers (op 1-10 + script triggers with argsData), and the ungated dialogue_continue pre-branch; the player:widget-action emit (widget_action + widget_drag) and the WORLD_INTERACTIONS preamble (TRADING skip, player:world-input emit, closeInterruptibleInterfaces with the preservesInterfaceOnEquip exception) run in dispatch order; gaps: simple-click emitButtonClick fallback (onButton/onButtonClick table-only), bank/prayer/combat/spell widget branches, Lunar/emitSpellOnItem/other-EffectSpells spell-on-item routes, animation-stall hold, creation-menu pre-branch",
+			Action:   "implemented: dead/busy/teleport gates (teleport degenerates to pass: no teleport system), BUSY_MESSAGE refusal via the hub refuseWhileBusy set, prompt-first hub emit (onInterfaceActionClick/onInterfaceActionButton, one list in registration order, handled short-circuit) from the widget-action fallthrough (a handled click skips the dialogue tail), the widget-target fallback (inventory-group close first), local triggers (op 1-10 + script triggers with argsData), and the ungated dialogue_continue pre-branch; the player:widget-action emit (widget_action + widget_drag) and the WORLD_INTERACTIONS preamble (TRADING skip, player:world-input emit, closeInterruptibleInterfaces with the preservesInterfaceOnEquip exception) run in dispatch order; gaps: simple-click emitButtonClick fallback (onButton/onButtonClick table-only), bank/prayer/combat/spell widget branches, Lunar/other-EffectSpells spell-on-item routes, animation-stall hold, creation-menu pre-branch",
 		},
 		{
 			Listener: "ItemActionPacketListener",

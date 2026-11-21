@@ -8,15 +8,97 @@ findings) lives outside this repository; status values below mean:
 ported, gaps listed), **NOT STARTED** (absent — nothing here
 pretends otherwise).
 
-Last updated: 2026-11-21 (phase 42 run: Mining skill — core
-loop + all 8 sub-units, live-verified in 4 smoke legs, 18
-checks, 0 failures. 4,766 tests passing, 25 packages.
+Last updated: 2026-11-21 (phase 43 run: Smithing skill —
+smelting + anvil + cannonballs + godswords + dragon shields
++ spears + Superheat, live-verified in 7 smoke legs, 38
+checks, 0 failures. 4,863 tests passing, 26 packages.
 Quests are postponed per Tyler's 2026-11-16 instruction
 (Doric's Quest picked but deferred); Tyler decided
 2026-11-17: combat leftovers first, then adding all skills
 — see "Next modules".)
 
 ## What was verified in this run
+
+- Phase 43 (`go build ./...`, `go vet ./...`, `gofmt -l .`:
+  clean. `CGO_ENABLED=0 go build ./...`: clean. 808 `.go`
+  files, 26 packages (new `internal/content/smithing`, 20
+  files; new `onSpellOnItem` hub family, 59/108 firable).
+- Phase 43 `go test ./... -p 1 -count=1 -v`: all 26 packages
+  pass (4,863 passing test cases: 3,681 top-level + 1,182
+  subtests, 0 failures, 0 skips — 4,766 from phase 42 + 97
+  new: 10 tables/loader (load-proven vs the real cache, 14
+  smelting / 6 cannonballs / 2 blurite / 6 spears / 188
+  anvil products, enum-846 zero-means-1, fallback
+  constants, steel-cannonball kept via ItemIdentifiers 2),
+  28 core loops (smelt timing/XP/iron-fail, anvil
+  quantity/product, cannonball batches, spear lock, ring
+  charges, session stops), 34 godswords/dragonshields/
+  superheat (combinations, dismantle, visage timelines,
+  wyvern Magic drain, superheat conversions + 3-tick pace),
+  3 onSpellOnItem seam (registration, emit, dispatch),
+  1 object-name-resolver wiring test, 3 wiring tests
+  updated for the Smithing load order, plus subtests; the
+  temporary phase-43 probe tests were deleted after use).
+- Phase 43 `go test -race ./...`: the coordinator's run passed
+  clean 26/26, but the parent's first full run REPRODUCED the
+  phase-37-suspect race — two genuine DATA RACE warnings in
+  `cmd/server` (`TestReloginResumesAtWalkedTile`):
+  `SetCombatCycleSource` (`combatant.go:484`) and
+  `SetAggressionCombatBridge` (`npc_aggression.go:372`) writes
+  during a second `buildServer` vs a first test server's
+  in-flight tick goroutine reading them. Root cause: `Engine.Stop`
+  waited for the scheduler loop but NOT for a tick already in
+  flight (`go e.runTick`), so a stopped server's tick could run
+  past Stop into the next test's build. Fixed by the parent in
+  this phase (`internal/game/engine.go`: a `sync.WaitGroup`
+  tracks in-flight ticks; `Stop` waits for it after the loop
+  exits; `TestEngineTicksAtRate`'s post-Stop poll became an
+  immediate assertion — the regression check for the fix).
+  After the fix: full-race run failed only on the known
+  pre-existing `TestEngineTicksAtRate` timing flake in
+  `internal/game` (TickCount 4 over ~60 ms, no DATA RACE);
+  `cmd/server` race runs 2 and 3 clean; `internal/game`
+  race re-run clean. Production was never affected: a single
+  server installs all sources in `buildServer` before
+  `Start`. See also §20, corrected below.
+- Live phase-43 smoke tests (throwaway harness in
+  `/home/hatch/smoke43/`, seven modes driving a real
+  WebSocket client against the real server binary + real
+  rev-242 cache from a temp root outside the repo; legs run
+  singly, 38 checks, 0 failures): smelt-bronze PASS 7/7
+  (1 bronze bar, 6 Smithing XP — 6.2 truncated — anim 899
+  + sound 2725, the smelt/retrieve chat lines, Smelt menu
+  lists 11 bars, Bronze first), smelt-menu PASS 4/4 (script
+  2046 on opcode 110, title "What would you like to
+  smelt?", Bronze bar first), anvil-smith PASS 8/8
+  (interface 312: varbit 3216 = 1, varp 2224 = 5; 5 bronze
+  daggers, 60 XP — 12 each — anim 898, varbits 13894/13895
+  = 1, "You hammer the bronze and make a dagger."),
+  walkaway PASS 5/5 (exactly 1 bar, 6 XP, 0 furnace anims
+  after walking away), ore-on-furnace PASS 3/3 (copper ore
+  on Furnace 24009 at (3226,3256) opens the Smelt menu),
+  bar-on-anvil PASS 2/2 (bronze bar on Rusted anvil 39620
+  at (3227,3250) opens interface 312), full PASS 9/9
+  (smelt 1 bronze bar with a 28/28 inventory still
+  produces the bar — TS-faithful, no space check in TS;
+  smithing nails, 15 per bar, with 2 free slots produces 0
+  nails, 0 XP, bar unconsumed). One live-found wiring gap
+  fixed in-phase: `SetObjectNameResolver` was never called
+  in `cmd/server`, so the item-on-object router was a
+  no-op — wired from the cache definitions (cooking's
+  `SetObjectInfo` precedent) and re-verified live by the
+  ore-on-furnace + bar-on-anvil legs. Two harness bugs
+  fixed in the harness, not the port: seeding 5
+  non-stackable bars/ores in one slot (one `DeleteNumber`
+  clears the whole slot — seed one per slot) and triggering
+  walkaway on the first anim 899, which is `beginSmelt`,
+  4 ticks before the bar lands (wait for the retrieve
+  chat). Sub-units unit-covered only, not observed live:
+  Cannonballs, Gear, Godswords, DragonShields, Spears,
+  Superheat (incl. the new `onSpellOnItem` seam — built
+  but no live spell cast was run). No NPC staging was
+  needed (furnaces/anvils are map objects) and no
+  eager-spawn wait.
 
 - Phase 42 (`go build ./...`, `go vet ./...`, `gofmt -l .`:
   clean. `CGO_ENABLED=0 go build ./...`: clean. 787 `.go`
@@ -178,7 +260,18 @@ Quests are postponed per Tyler's 2026-11-16 instruction
   reproduce in isolation: the single test passes 3/3
   with `-race` on both trees. It is a real race worth
   fixing, but it is not this phase's scope; the
-  non-race suite above is green.
+  non-race suite above is green. RESOLVED in phase 43
+  verification (2026-11-21): the parent's first full-race
+  run reproduced it with a second warning alongside it
+  (`SetAggressionCombatBridge`, `npc_aggression.go:372`,
+  same pattern) and fixed the root cause — `Engine.Stop`
+  waited for the scheduler loop but not for a tick already
+  in flight, so a stopped server's tick ran past Stop into
+  the next test's build. `Engine.Stop` now waits for
+  in-flight ticks via a `sync.WaitGroup`
+  (`internal/game/engine.go`); after the fix the race
+  runs clean (see the phase-43 race line above). The
+  single-server production path was never affected.
 - Live phase-37 checks (throwaway roots outside the repo,
   real server binary + real rev-242 cache, roots kept at
   `/home/hatch/live37/` and `/home/hatch/live37-f2p/`):
@@ -680,7 +773,23 @@ Quests are postponed per Tyler's 2026-11-16 instruction
   12119 (in neither file) the TS DEFAULT shape 422/-1/836;
   shops 487 with 5,471 stock lines, shop 0 "General Store"
   stock exactly 590/1351/1265/946/2347/1755 × 2,000,000,000.
-  Live-verified in smoke39 (see §22 for the legs).
+  Live-verified in smoke39 (see §22 for the legs). The same
+  applies to `data/definitions/smithing.json` (furnace
+  recipes + experience, item keys are ItemIdentifiers
+  names) and `data/definitions/smithing-anvil-layout.json`
+  (anvil product slots, generated by `yarn dump:smithing`),
+  imported verbatim 2026-11-21 on Tyler's approval
+  (widget tap "Import both Smithing files", SHA-256
+  verified identical to upstream, `0ce29227...` smithing,
+  `ab2b2222...` anvil-layout) — the Go loader landed in
+  Phase 43 (`internal/content/smithing/tables.go`, wired by
+  `cmd/server/smithingwiring.go`): load-proven against the
+  real rev-242 cache, 14 smelting / 6 cannonballs / 2
+  blurite / 6 spears / 188 anvil products; enums 844
+  (amount) / 845 (bars) / 846 (level) / 1101 (slotIndex)
+  all read from the cache; 5 fallback constants for names
+  with no (correct) gameval, incl. STEEL_CANNONBALL → 2
+  (ItemIdentifiers.ts:5, cache item 2 "Steel cannonball").
 
 ## Module inventory
 
@@ -714,8 +823,8 @@ Quests are postponed per Tyler's 2026-11-16 instruction
 | P2 | HTTP extras: `ContentApi`, `GatewayTarget`, `/regions` routes | `internal/session` (`gateway.go`), `cmd/server` (wiring) | PARTIAL (phase 37: `GatewayTarget` DONE — `GET /gateway/jav_config.ws` byte-exact vs TS (30 lines, `param=25` = cache revision, host from `PUBLIC_HOST` or 127.0.0.1, warn-once on invalid host) + `GET /gateway/worldlist.ws` one-world binary (members flag from the world definition, type flags 0 / activity `tsps` — the Go world definition carries no world-type source, which is the TS default), both live-verified against the real rev-242 cache incl. members/non-members and `PUBLIC_HOST`; `ContentApi` (`/api/*`) and the `/regions` routes still NOT STARTED — handler 404s them) |
 | P2 | Interface runtime: `Player` interface id, `PacketSender` interface mounts, `InterfaceLayoutRegistry`, `InterfaceActionClickOpcode`, entered-amount/syntax prompts, the live varp/varbit store | `internal/game` (interface id + close gate, entered actions), `internal/session` (mount tracking + sender surface, varp store), `internal/definition` (layout open dispatch), `internal/listeners` (action dispatch, prompt answers, close case), `internal/plugins` (interface families), `cmd/server` (wiring) | DONE (phase 18, live-verified: interface open/close/layering + close-on-movement/logout/death + layout open dispatch on all 7 surfaces + action dispatch to hub hooks with prompt-first order + entered-amount/syntax prompts + varp/varbit store with change detection, varbit packing, and replay; session-only, nothing persists; `VarManager` transform plumbing, `registerCustomInterface`, bank interface flows, and the per-player vars seam are gaps — see notes) |
 | P2 | Clans/social: `PlayerRelations`, social-packet dispatch, friends-chat-snapshot + clan encoders | `internal/game` (relations, names, chat gate), `internal/protocol` (social decoders/encoders), `internal/session` (social senders), `internal/listeners` (social dispatch), `internal/persist` (relations ownership), `internal/plugins` (social-packet variants), `cmd/server` (wiring) | DONE (phase 19, live-verified: whole `PlayerRelations` port + live chat gate + all 8 social-packet kinds emitted to the hub + snapshot/clan encoders + relations owned save state + logout presence-offline; friends-chat channels + the clan system are plugin content (FriendsList/Clans, NOT ported — the engine unlocks them); the legacy friend/ignore presence sends are no-ops, exactly as in TS (`PlayerSession.write` is a no-op upstream) — live presence comes from the snapshot, which content sends; chat modes session-only — see notes) |
-| P3 | Plugin hub: `PluginManager`, `PluginTypes` | `internal/plugins` + `cmd/server` (`pluginwiring.go`) | DONE (compile-time registry, dependency-ordered loading, config-declaration validation, world.json switches, members-gating, lifecycle + custom-event + command/social-packet + object-interaction + dialogue + zone + combat + shop/trade + interface + skills + world-entity-interaction hooks with per-hook error isolation, gate contracts, scoped core surface, login extensions; the social-packet family fires all 8 kinds since phase 19 (same family, not a new one — the count is unchanged); onCanAttack became firable in phase 26; onSpellDisabled + onSpellRuneBypass became firable in phase 27; onShouldDropItemsOnDeath + onShouldKeepItemOnDeath + onPlayerDefeated + onPlayerDeathItemDrop + onPlayerDeathDrops became firable in phase 28 (51 of 108); the onItemAction family became firable in phase 32 (onItemAction/onItemActionNamed/onItemFirstAction/onCanUseItem, 54 of 108); the onNpcClick family became firable in phase 33 (onNpcClick, with the NPC remains-delay + transform seams in the death flow) and the onItemOnItem family became firable in phase 33 (onItemOnItem/onItemOnItemNamed, riding INVENTORY_USE_ON kind 4 — there is no separate item-on-item opcode), and the onNpcInteraction family became firable in phase 35 (onNpcInteraction, name hooks after the onNpcClick bindings — TS order, `NPCOptionPacketListener.ts:122/:132` — with the `DefinitionName`/`Action`/`Actions` fields on the hub event; `OnNpcsInteraction`/`OnBeforeNpcInteraction`/`OnNpcRoute` stay table-only), and the onAnyNpcInteraction family became firable in phase 41 (onAnyNpcInteraction, the generic list last after the name hooks — TS order, `PluginManager.ts:1246-1263` — with `Hub.AddNpcClickHook`/`Hub.AddAnyNpcInteractionHook` engine installs that bypass the load seal so Shopkeepers bindings can be installed post-Load; `OnNpcsInteraction`/`OnBeforeNpcInteraction`/`OnNpcRoute` stay table-only), 58 of 108; 50 of 108 hook families have no registration method yet — documented in the unfired-family table with the missing system named — and 29 of 95 non-hook members are ported, and 12 of 191 Core members — see notes; hub-count correction in phase 31: earlier versions of this document said 53/108, counting registration *methods* as *families* — Go has 62 `Api.On*` methods but four are named overloads of already-counted families (`OnObjectInteractionNamed`, `OnItemOnObjectNamed`, `OnItemActionNamed`, `OnItemOnItemNamed`), so 58 distinct families are firable (62 methods) and 50 are table-only; `hooks.go`'s header says fifty-eight (updated in phase 41; the phase-35 plan's "5 named overloads" was wrong — recount: exactly 4 `*Named` methods) |
-| P3 | All `plugins/` content (2,907 JS files, 789,355 lines) | Go packages under `internal/content/` | PARTIAL (13 of 577 entries ported: DateMinutes (phase 10), GracefulOutfit + WornWeights (phase 22), LumbridgeGuide (phase 23), SeekingArrows (phase 24), Woodcutting (phases 32–33 — core loop + all sub-units except the Guild, which needs Tyler's `woodcutting-guild.json` import approval), Fletching (phase 34 — full skill: Shared loop, Recipes, Spool, Diaries, CreationMenu seam, all live-verified), Fishing (phase 35 — core loop + 8 of 10 sub-units, MinnowPlatform / Gita exchange / Guild door deferred, live-verified in 4 modes), Cooking (phase 36 — full skill: Cookers, Recipes, Wine, Churn, SacredEel, LeapingFish, Gnome, live-verified on fire/range/wine legs), AdminCommands (phase 38 — `::item` only, the first registered command, live-verified: admin spawn + denial path), WildernessDitch (phase 40 — `Cross` on object 23271 with the ForceMovement glide + click delay, live-verified: south/north/turn crossings + the wall leg), Shopkeepers (phase 41 — `shops.json` npcInteractions bindings via onAnyNpcInteraction + 19 item / 13 point currencies, live-verified: shop-open/buy/sell/shared/tokkul legs, 32 checks), Mining (phase 42 — full skill: core loop + all 8 sub-units, live-verified: copper/tin, depletion, full-inventory, walk-away legs, 18 checks), all live-verified; the rest per `CONTENT_MIGRATION_PLAN.md`, piece by piece with Tyler's direction; no wholesale port) |
+| P3 | Plugin hub: `PluginManager`, `PluginTypes` | `internal/plugins` + `cmd/server` (`pluginwiring.go`) | DONE (compile-time registry, dependency-ordered loading, config-declaration validation, world.json switches, members-gating, lifecycle + custom-event + command/social-packet + object-interaction + dialogue + zone + combat + shop/trade + interface + skills + world-entity-interaction hooks with per-hook error isolation, gate contracts, scoped core surface, login extensions; the social-packet family fires all 8 kinds since phase 19 (same family, not a new one — the count is unchanged); onCanAttack became firable in phase 26; onSpellDisabled + onSpellRuneBypass became firable in phase 27; onShouldDropItemsOnDeath + onShouldKeepItemOnDeath + onPlayerDefeated + onPlayerDeathItemDrop + onPlayerDeathDrops became firable in phase 28 (51 of 108); the onItemAction family became firable in phase 32 (onItemAction/onItemActionNamed/onItemFirstAction/onCanUseItem, 54 of 108); the onNpcClick family became firable in phase 33 (onNpcClick, with the NPC remains-delay + transform seams in the death flow) and the onItemOnItem family became firable in phase 33 (onItemOnItem/onItemOnItemNamed, riding INVENTORY_USE_ON kind 4 — there is no separate item-on-item opcode), and the onNpcInteraction family became firable in phase 35 (onNpcInteraction, name hooks after the onNpcClick bindings — TS order, `NPCOptionPacketListener.ts:122/:132` — with the `DefinitionName`/`Action`/`Actions` fields on the hub event; `OnNpcsInteraction`/`OnBeforeNpcInteraction`/`OnNpcRoute` stay table-only), and the onAnyNpcInteraction family became firable in phase 41 (onAnyNpcInteraction, the generic list last after the name hooks — TS order, `PluginManager.ts:1246-1263` — with `Hub.AddNpcClickHook`/`Hub.AddAnyNpcInteractionHook` engine installs that bypass the load seal so Shopkeepers bindings can be installed post-Load; `OnNpcsInteraction`/`OnBeforeNpcInteraction`/`OnNpcRoute` stay table-only), and the onSpellOnItem family became firable in phase 43 (onSpellOnItem, fired from castSpellOnItem in the MagicOnItem listener through the listeners' `SpellHooks.EmitSpellOnItem` seam wired in spellwiring.go; Superheat Item is its first consumer), 59 of 108; 49 of 108 hook families have no registration method yet — documented in the unfired-family table with the missing system named — and 29 of 95 non-hook members are ported, and 12 of 191 Core members — see notes; hub-count correction in phase 31: earlier versions of this document said 53/108, counting registration *methods* as *families* — Go has 63 `Api.On*` methods but four are named overloads of already-counted families (`OnObjectInteractionNamed`, `OnItemOnObjectNamed`, `OnItemActionNamed`, `OnItemOnItemNamed`), so 59 distinct families are firable (63 methods) and 49 are table-only; `hooks.go`'s header says fifty-nine (updated in phase 43; the phase-35 plan's "5 named overloads" was wrong — recount: exactly 4 `*Named` methods) |
+| P3 | All `plugins/` content (2,907 JS files, 789,355 lines) | Go packages under `internal/content/` | PARTIAL (14 of 577 entries ported: DateMinutes (phase 10), GracefulOutfit + WornWeights (phase 22), LumbridgeGuide (phase 23), SeekingArrows (phase 24), Woodcutting (phases 32–33 — core loop + all sub-units except the Guild, which needs Tyler's `woodcutting-guild.json` import approval), Fletching (phase 34 — full skill: Shared loop, Recipes, Spool, Diaries, CreationMenu seam, all live-verified), Fishing (phase 35 — core loop + 8 of 10 sub-units, MinnowPlatform / Gita exchange / Guild door deferred, live-verified in 4 modes), Cooking (phase 36 — full skill: Cookers, Recipes, Wine, Churn, SacredEel, LeapingFish, Gnome, live-verified on fire/range/wine legs), AdminCommands (phase 38 — `::item` only, the first registered command, live-verified: admin spawn + denial path), WildernessDitch (phase 40 — `Cross` on object 23271 with the ForceMovement glide + click delay, live-verified: south/north/turn crossings + the wall leg), Shopkeepers (phase 41 — `shops.json` npcInteractions bindings via onAnyNpcInteraction + 19 item / 13 point currencies, live-verified: shop-open/buy/sell/shared/tokkul legs, 32 checks), Mining (phase 42 — full skill: core loop + all 8 sub-units, live-verified: copper/tin, depletion, full-inventory, walk-away legs, 18 checks), Smithing (phase 43 — full skill: smelting + anvil + cannonballs + godswords + dragon shields + spears + Superheat, new onSpellOnItem seam, live-verified: smelt/smith/menu/walkaway/ore-on-furnace/bar-on-anvil/full legs, 38 checks), all live-verified; the rest per `CONTENT_MIGRATION_PLAN.md`, piece by piece with Tyler's direction; no wholesale port) |
 | P3 | Bots: `plugins/bots/` + bot runtime | undecided | NOT STARTED |
 | P3 | WebRTC transport | undecided | NOT STARTED |
 | P3 | Browser host: `BrowserHostHttpBridge`, IndexedDB persistence | undecided | NOT STARTED |
@@ -3991,6 +4100,46 @@ pick is Tyler's. Verification counts are unchanged from phase 24
     unobservable live. (k) The ores-mined varp is
     `tracking_ore_mined`, cache varp id 4526, load-proven
     against the real cache.
+26. Phase 43 residual gaps (Smithing; all documented at
+    the port sites, none silent): (a) XP integer truncation
+    (smelting 6.2 → 6, gold 22.5 → 22, `xpPerBar` 12.5 → 12;
+    superheat steel 17.5 → 17, iron 12.5 → 12, silver 13.7
+    → 13; infernal Smithing 3.6 → 3 already noted in gap
+    25(c)) — structural, same gap as 16–19/25. (b) No
+    `SkillLevelUp` emitter; `level-up:popup-opened` never
+    emitted in Go (session pause dead). (c) Quest gates
+    fail-closed (`quest:is-complete` unanswered): blurite
+    smelting, cannonballs, dragon forge locked; Spears
+    fail-open per TS. (d) `skillcape:has-perk` unanswered
+    (goldsmith XP boost never applies); coal bag
+    `storage:amount`/`storage:take` unanswered;
+    `skills:level-boost` / `skills:actions-per-cycle` /
+    `skills:produced` unanswered. (e)
+    `smithing:anvil-access` unanswered (Dorics Quest
+    unported). (f) Full-inventory production is
+    TS-faithful: Smelting/Sessions/Anvil contain no
+    inventory-space check, so smelting 1 bronze bar with a
+    28/28 inventory still produces the bar (consumed
+    ingredients free the slot); the refusal only bites for
+    multi-output products — smithing nails (15 per bar)
+    with 2 free slots produces 0 nails, 0 XP, bar
+    unconsumed (live-verified in smoke43). (g) Station
+    snapshots hold the location only: Go has no
+    getTeleportSerial / getArea, so a teleport that lands
+    back on the same tile does not stop a session. (h)
+    Dismantle prompt uses Go's `OptionDialogue` (group
+    219); TS uses `sendMultiChatboxPrompt` — no Go seam for
+    the latter exists. (i) `dialogues.go` helpers belong in
+    `common.go` on merge; `Cycle` on the hub
+    `SpellOnItemEvent` is a Go-only addition. (j) Blast
+    Furnace NOT STARTED (separate minigame phase); Giants'
+    Foundry NOT STARTED. (k) Sub-units unit-covered only,
+    not observed live: Cannonballs, Gear (ring of forging /
+    Varrock armour), Godswords, DragonShields, Spears,
+    Superheat (incl. the new `onSpellOnItem` seam — built
+    but no live spell cast was run; the live legs cover the
+    core loops: smelt, smelt-menu, anvil, walk-away,
+    ore-on-furnace, bar-on-anvil, full-inventory).
 
 ## Next modules, in priority order
 

@@ -1101,7 +1101,7 @@ func (a *worldAdapter) AddPlayer(ep *session.EnteringPlayer) (int, session.TurnS
 	// combat spell cast, rune/disabled gates, and tick-task
 	// scheduling. The definitions facade is nil in NoCache
 	// mode, so spell ids resolve by id only there.
-	InstallSpellListeners(&deps, a.varbitDefs, a.world)
+	InstallSpellListeners(&deps, a.plugins, a.varbitDefs, a.world)
 	// Shop wiring (see shopwiring.go): the NPC static-interaction
 	// source + OpenShop on the NpcHooks struct, and the shop
 	// widget handler. Runs after InstallDialogueListeners

@@ -93,6 +93,31 @@ type SpellRuneBypassEvent struct {
 	Bypass    *bool
 }
 
+// SpellOnItemEvent is the payload of the onSpellOnItem
+// hooks. It mirrors PluginSpellOnItemEvent
+// (PluginTypes.ts:801-810): the player, the spellbook name of
+// the cast spell ("" when the cache has none), the spell's
+// widget and item ids, the inventory item the spell was cast
+// on and its slot, and the handled flag. A hook sets Handled
+// to claim the cast (the listener's own cast route is then
+// skipped, as TS skips MAGIC_ITEMS.castOnItem when the emit
+// claims the click).
+type SpellOnItemEvent struct {
+	Player      *game.Player
+	SpellName   string
+	SpellWidget int
+	SpellItemID int
+	ItemID      int
+	Slot        int
+	// Cycle is the world cycle the click arrived on (the
+	// listener's pacing clock; handlers that pace a cast,
+	// like Superheat's 3-tick pace, read it). Go-only: TS
+	// paces through the spell's wall-clock cooldown instead.
+	// 0 when the caller has none.
+	Cycle   int64
+	Handled bool
+}
+
 // SpellRuneSource is a container that can supply runes the
 // inventory cannot, e.g. a rune pouch. It mirrors
 // PluginSpellRuneSource (PluginTypes.ts:981-988): Check is
@@ -153,6 +178,18 @@ func (r *hookRegistry) snapshotSpellRuneSources() []spellRuneSourceEntry {
 	return append([]spellRuneSourceEntry(nil), r.spellRuneSources...)
 }
 
+func (r *hookRegistry) addSpellOnItem(e hookEntry[*SpellOnItemEvent]) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.spellOnItem = append(r.spellOnItem, e)
+}
+
+func (r *hookRegistry) snapshotSpellOnItem() []hookEntry[*SpellOnItemEvent] {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return append([]hookEntry[*SpellOnItemEvent](nil), r.spellOnItem...)
+}
+
 // --- registration methods ---
 
 // OnSpellDisabled registers a spell-disabled hook, mirroring
@@ -197,6 +234,32 @@ func (a *Api) OnSpellRuneBypass(handler func(*SpellRuneBypassEvent)) {
 	}
 	a.hub.hooks.addSpellRuneBypass(hookEntry[*SpellRuneBypassEvent]{pluginName: a.name, handler: func(event *SpellRuneBypassEvent) {
 		if event == nil || event.Player == nil {
+			return
+		}
+		handler(event)
+	}})
+}
+
+// OnSpellOnItem registers a spell-on-item hook, mirroring
+// onSpellOnItem (PluginTypes.ts:1210). Hooks run in
+// registration order through EmitSpellOnItem: each hook's
+// registration wrapper skips once the event is handled, so
+// the first claim wins and later hooks never run — the TS
+// loop's `if (event.handled) break`
+// (PluginManager.ts:1975-1984). A nil handler is ignored
+// silently, mirroring the createApi guard
+// (PluginManager.ts:4225-4235). The stored handler wraps the
+// plugin's with the TS guard: an event without a player, or
+// one already handled, never reaches the plugin's handler.
+func (a *Api) OnSpellOnItem(handler func(*SpellOnItemEvent)) {
+	if handler == nil {
+		return
+	}
+	if !a.canRegister("onSpellOnItem") {
+		return
+	}
+	a.hub.hooks.addSpellOnItem(hookEntry[*SpellOnItemEvent]{pluginName: a.name, handler: func(event *SpellOnItemEvent) {
+		if event == nil || event.Handled || event.Player == nil {
 			return
 		}
 		handler(event)
@@ -278,6 +341,47 @@ func (h *Hub) EmitSpellRuneBypass(player *game.Player, spellbook game.Spellbook,
 	answer := runFirstAnswerGate(h.Logger(), "spell_rune_bypass", h.hooks.snapshotSpellRuneBypass(), event,
 		func(e *SpellRuneBypassEvent) *bool { return e.Bypass })
 	return answer != nil && *answer
+}
+
+// EmitSpellOnItem runs the onSpellOnItem hooks for a spell
+// cast on an inventory item, mirroring
+// PluginManager.emitSpellOnItem (PluginManager.ts:1975-1984)
+// with label "spell_on_item": the slot/id guard first —
+// when the slot no longer holds the item the click is
+// claimed (true) and no hook runs, exactly as TS returns
+// true there — then the hooks in registration order, each
+// skipped once the event is handled (the TS loop's break),
+// and the result is whether a hook claimed the cast. The
+// emitCanUseItem term reads as allowed: no can-use seam
+// exists in the listeners (the same documented gap
+// castOnItem carries). A nil Hub, a Hub without a registry,
+// or a nil event yields false (Go-only guards; TS has no
+// nil-event equivalent). A nil player yields true: the slot
+// guard cannot pass without one, and TS's guard would throw
+// on the inventory read — claiming the click is the
+// fail-closed reading.
+//
+// The production call site is castSpellOnItem
+// (internal/listeners/magicitem.go), through the
+// listeners' SpellHooks.EmitSpellOnItem seam wired in
+// cmd/server/spellwiring.go. Superheat Item is its first
+// consumer (phase 43).
+func (h *Hub) EmitSpellOnItem(event *SpellOnItemEvent) bool {
+	if h == nil || h.hooks == nil || event == nil {
+		return false
+	}
+	player := event.Player
+	if player == nil || player.Inventory() == nil {
+		return true
+	}
+	if event.Slot < 0 || event.Slot >= player.Inventory().Capacity() {
+		return true
+	}
+	if held := player.Inventory().ItemAt(event.Slot); !held.IsValid() || held.ID() != event.ItemID {
+		return true
+	}
+	emitHooks(h.Logger(), "spell_on_item", h.hooks.snapshotSpellOnItem(), event)
+	return event.Handled
 }
 
 // CheckSpellRuneSource reports whether a registered rune source

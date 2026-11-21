@@ -22,6 +22,7 @@ import (
 	_ "tsps-go/internal/content/mining"
 	_ "tsps-go/internal/content/seekingarrows"
 	_ "tsps-go/internal/content/shopkeepers"
+	_ "tsps-go/internal/content/smithing"
 	_ "tsps-go/internal/content/wildernessditch"
 	_ "tsps-go/internal/content/woodcutting"
 	_ "tsps-go/internal/content/wornweights"
@@ -76,6 +77,9 @@ func newPluginHub(worldDef *config.World, logger *log.Logger, defs *cache.CacheD
 		return nil, err
 	}
 	if err := installMiningTables(worldDef, defs); err != nil {
+		return nil, err
+	}
+	if err := installSmithingTables(worldDef, defs); err != nil {
 		return nil, err
 	}
 	hub.Load()

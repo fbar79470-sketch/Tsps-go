@@ -8,10 +8,13 @@
 // on the NORMAL spellbook — levels, rune costs with the bypass
 // gate and infinite staves, the spell-disabled gate, alchemy
 // pacing + queueing, coin payment, Magic XP, and the telegrab's
-// delayed landing through the task seam. Other EffectSpells
-// (Superheat Item, Bones to Bananas, Bones to Peaches, Bake Pie,
-// Vengeance, Vengeance Other) and the Arceuus reanimations route
-// to documented NOT STARTED handlers: castOnItem returns false
+// delayed landing through the task seam. The onSpellOnItem hook
+// family fires since phase 43 (castSpellOnItem dispatches it
+// before the listener's own cast route, as TS does), and
+// Superheat Item is its first consumer. Other EffectSpells
+// (Bones to Bananas, Bones to Peaches, Bake Pie, Vengeance,
+// Vengeance Other) and the Arceuus reanimations route to
+// documented NOT STARTED handlers: castOnItem returns false
 // for them and the click falls through to the interface-action
 // handle, exactly as TS falls through when MAGIC_ITEMS returns
 // false.
@@ -291,14 +294,34 @@ func routeSpellOnGround(p *game.Player, msg protocol.SpellOnGround, cycle int64,
 // handling, the emitSpellOnItem hook family, then
 // MAGIC_ITEMS.castOnItem. It reports whether the spell route
 // claimed the click. Only inventory targets reach here — the
-// caller gates on the target widget group. LunarSpells and
-// emitSpellOnItem have no Go form yet, so both read false and
-// the cast is the only live route.
+// caller gates on the target widget group. LunarSpells has no
+// Go form yet, so it reads false; the hook family fires since
+// phase 43 (Superheat Item is its first consumer), and a hook
+// that claims the cast consumes the click before the
+// listener's own cast route runs — exactly as TS skips
+// MAGIC_ITEMS.castOnItem when the emit claims it. The hook's
+// handler pays its own runes through the spell system, so the
+// existing spell-cast flow (runes consumed, spell casts)
+// holds for claimed casts too; unclaimed clicks fall through
+// to castOnItem unchanged.
 func castSpellOnItem(p *game.Player, msg protocol.WidgetTarget, cycle int64, deps Deps) bool {
 	// LunarSpells.handleItemTarget: GAP, reads false (Lunar
 	// is out of scope).
-	// PluginManager.emitSpellOnItem: GAP, reads false (the
-	// onSpellOnItem hook family is NOT STARTED).
+	if deps.SpellHooks.EmitSpellOnItem != nil {
+		spellName, _ := spellNameOf(deps, int(msg.SourceWidgetID), msg.SourceItemID)
+		ev := &SpellOnItemEvent{
+			Player:      p,
+			SpellName:   spellName,
+			SpellWidget: int(msg.SourceWidgetID),
+			SpellItemID: msg.SourceItemID,
+			ItemID:      msg.TargetItemID,
+			Slot:        msg.TargetSlot,
+			Cycle:       cycle,
+		}
+		if deps.SpellHooks.EmitSpellOnItem(ev) {
+			return true
+		}
+	}
 	spellID := game.ResolveClientCombatSpellID(
 		int(msg.SourceWidgetID), int(msg.SourceWidgetID)&0xffff, msg.SourceItemID,
 		deps.SpellHooks.SpellName,
