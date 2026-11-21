@@ -8,17 +8,65 @@ findings) lives outside this repository; status values below mean:
 ported, gaps listed), **NOT STARTED** (absent — nothing here
 pretends otherwise).
 
-Last updated: 2026-11-21 (phase 41 run: Shopkeepers plugin —
-`onAnyNpcInteraction` becomes firable, 58 of 108 families, 62
-registration methods — 4 named overloads; shops open by NPC
-click with the Phase 39 data, live-verified in 5 smoke legs,
-32 checks, 0 failures. 4,713 tests passing. Quests are
-postponed per Tyler's 2026-11-16 instruction (Doric's Quest
-picked but deferred); Tyler decided 2026-11-17: combat
-leftovers first, then adding all skills — see "Next modules".)
+Last updated: 2026-11-21 (phase 42 run: Mining skill — core
+loop + all 8 sub-units, live-verified in 4 smoke legs, 18
+checks, 0 failures. 4,766 tests passing, 25 packages.
+Quests are postponed per Tyler's 2026-11-16 instruction
+(Doric's Quest picked but deferred); Tyler decided
+2026-11-17: combat leftovers first, then adding all skills
+— see "Next modules".)
 
 ## What was verified in this run
 
+- Phase 42 (`go build ./...`, `go vet ./...`, `gofmt -l .`:
+  clean. `CGO_ENABLED=0 go build ./...`: clean. 787 `.go`
+  files, 25 packages (new `internal/content/mining`).
+- Phase 42 `go test ./... -p 1 -count=1 -v`: all 25 packages
+  pass (4,766 passing test cases: 3,605 top-level + 1,161
+  subtests, 0 failures, 0 skips — 4,713 from phase 41 + 53
+  new: 40 mining top-level + 13 subtests (core loop,
+  tables/load-proven vs the real cache, depletion/respawn,
+  pickaxes, gems, clue geodes, crystal/infernal charges,
+  varrock/prospector, saltpetre dig, calcified water cycle,
+  ancient essence movement) and the 3 wiring tests updated
+  for the Mining load order (F2P: Fishing → Mining →
+  Woodcutting; members: Fletching → Mining → Woodcutting);
+  the temporary phase-42 probe tests were deleted after
+  use).
+- Phase 42 `go test -race ./...`: no data race anywhere;
+  the coordinator's first full run passed 25/25; the
+  parent's first full run failed only on the known
+  pre-existing `TestEngineTicksAtRate` timing flake in
+  `internal/game` (TickCount 2 over ~60 ms at the 5 ms
+  rate), and a re-run of `internal/game` with `-race`
+  passed clean. The phase-37-suspect `combatant.go`
+  `SetCombatCycleSource` race still does not reproduce.
+- Live phase-42 smoke tests (throwaway harness in
+  `/home/hatch/smoke42/`, four modes driving a real
+  WebSocket client against the real server binary + real
+  rev-242 cache from a temp root outside the repo; legs run
+  singly, 18 checks, 0 failures): copper-tin PASS 8/8
+  (Mine copperrock1 10943 at (3228,3144) then tinrock1
+  11360 at (3224,3146) in the Lumbridge Swamp mine: 7
+  copper + 7 tin ore, 238 Mining XP, ores-mined varp 4526
+  = 14, bronze swing anim 625 + success sound 3600 on the
+  wire, the "You manage to mine some copper." / "...tin."
+  chat lines), depletion PASS 4/4 (8 copper ores from the
+  one rock = 8 depletion + respawn cycles, varp 4526 = 8,
+  anim 625 + sound 3600), full PASS 3/3 (full inventory:
+  0 ore, 0 XP, no swing anim), walkaway PASS 3/3 (first
+  ore at varp 1, walked to (3235,3150), ore count and varp
+  frozen at 1 after 30 s). Two harness lessons, both
+  harness bugs, not port bugs: a copper rock holds exactly
+  one ore and the session stops on depletion (TS-faithful,
+  `Mining.plugin.js` ~874/951/974), so the legs re-click
+  after each depletion like a player; and the ore chat
+  line is "You manage to mine some copper." (first word of
+  the rock name, `oreMessage`, plugin.js:649-651), not
+  "...copper ore."; and `invAmount` returns only the first
+  matching slot, so ore totals sum slots (ores are not
+  stackable). No NPC staging was needed (rocks are map
+  objects) and no eager-spawn wait.
 - Phase 41 (`go build ./...`, `go vet ./...`, `gofmt -l .`:
   clean. `CGO_ENABLED=0 go build ./...`: clean. 772 `.go`
   files, 24 packages (new `internal/content/shopkeepers`).
@@ -667,7 +715,7 @@ leftovers first, then adding all skills — see "Next modules".)
 | P2 | Interface runtime: `Player` interface id, `PacketSender` interface mounts, `InterfaceLayoutRegistry`, `InterfaceActionClickOpcode`, entered-amount/syntax prompts, the live varp/varbit store | `internal/game` (interface id + close gate, entered actions), `internal/session` (mount tracking + sender surface, varp store), `internal/definition` (layout open dispatch), `internal/listeners` (action dispatch, prompt answers, close case), `internal/plugins` (interface families), `cmd/server` (wiring) | DONE (phase 18, live-verified: interface open/close/layering + close-on-movement/logout/death + layout open dispatch on all 7 surfaces + action dispatch to hub hooks with prompt-first order + entered-amount/syntax prompts + varp/varbit store with change detection, varbit packing, and replay; session-only, nothing persists; `VarManager` transform plumbing, `registerCustomInterface`, bank interface flows, and the per-player vars seam are gaps — see notes) |
 | P2 | Clans/social: `PlayerRelations`, social-packet dispatch, friends-chat-snapshot + clan encoders | `internal/game` (relations, names, chat gate), `internal/protocol` (social decoders/encoders), `internal/session` (social senders), `internal/listeners` (social dispatch), `internal/persist` (relations ownership), `internal/plugins` (social-packet variants), `cmd/server` (wiring) | DONE (phase 19, live-verified: whole `PlayerRelations` port + live chat gate + all 8 social-packet kinds emitted to the hub + snapshot/clan encoders + relations owned save state + logout presence-offline; friends-chat channels + the clan system are plugin content (FriendsList/Clans, NOT ported — the engine unlocks them); the legacy friend/ignore presence sends are no-ops, exactly as in TS (`PlayerSession.write` is a no-op upstream) — live presence comes from the snapshot, which content sends; chat modes session-only — see notes) |
 | P3 | Plugin hub: `PluginManager`, `PluginTypes` | `internal/plugins` + `cmd/server` (`pluginwiring.go`) | DONE (compile-time registry, dependency-ordered loading, config-declaration validation, world.json switches, members-gating, lifecycle + custom-event + command/social-packet + object-interaction + dialogue + zone + combat + shop/trade + interface + skills + world-entity-interaction hooks with per-hook error isolation, gate contracts, scoped core surface, login extensions; the social-packet family fires all 8 kinds since phase 19 (same family, not a new one — the count is unchanged); onCanAttack became firable in phase 26; onSpellDisabled + onSpellRuneBypass became firable in phase 27; onShouldDropItemsOnDeath + onShouldKeepItemOnDeath + onPlayerDefeated + onPlayerDeathItemDrop + onPlayerDeathDrops became firable in phase 28 (51 of 108); the onItemAction family became firable in phase 32 (onItemAction/onItemActionNamed/onItemFirstAction/onCanUseItem, 54 of 108); the onNpcClick family became firable in phase 33 (onNpcClick, with the NPC remains-delay + transform seams in the death flow) and the onItemOnItem family became firable in phase 33 (onItemOnItem/onItemOnItemNamed, riding INVENTORY_USE_ON kind 4 — there is no separate item-on-item opcode), and the onNpcInteraction family became firable in phase 35 (onNpcInteraction, name hooks after the onNpcClick bindings — TS order, `NPCOptionPacketListener.ts:122/:132` — with the `DefinitionName`/`Action`/`Actions` fields on the hub event; `OnNpcsInteraction`/`OnBeforeNpcInteraction`/`OnNpcRoute` stay table-only), and the onAnyNpcInteraction family became firable in phase 41 (onAnyNpcInteraction, the generic list last after the name hooks — TS order, `PluginManager.ts:1246-1263` — with `Hub.AddNpcClickHook`/`Hub.AddAnyNpcInteractionHook` engine installs that bypass the load seal so Shopkeepers bindings can be installed post-Load; `OnNpcsInteraction`/`OnBeforeNpcInteraction`/`OnNpcRoute` stay table-only), 58 of 108; 50 of 108 hook families have no registration method yet — documented in the unfired-family table with the missing system named — and 29 of 95 non-hook members are ported, and 12 of 191 Core members — see notes; hub-count correction in phase 31: earlier versions of this document said 53/108, counting registration *methods* as *families* — Go has 62 `Api.On*` methods but four are named overloads of already-counted families (`OnObjectInteractionNamed`, `OnItemOnObjectNamed`, `OnItemActionNamed`, `OnItemOnItemNamed`), so 58 distinct families are firable (62 methods) and 50 are table-only; `hooks.go`'s header says fifty-eight (updated in phase 41; the phase-35 plan's "5 named overloads" was wrong — recount: exactly 4 `*Named` methods) |
-| P3 | All `plugins/` content (2,907 JS files, 789,355 lines) | Go packages under `internal/content/` | PARTIAL (12 of 577 entries ported: DateMinutes (phase 10), GracefulOutfit + WornWeights (phase 22), LumbridgeGuide (phase 23), SeekingArrows (phase 24), Woodcutting (phases 32–33 — core loop + all sub-units except the Guild, which needs Tyler's `woodcutting-guild.json` import approval), Fletching (phase 34 — full skill: Shared loop, Recipes, Spool, Diaries, CreationMenu seam, all live-verified), Fishing (phase 35 — core loop + 8 of 10 sub-units, MinnowPlatform / Gita exchange / Guild door deferred, live-verified in 4 modes), Cooking (phase 36 — full skill: Cookers, Recipes, Wine, Churn, SacredEel, LeapingFish, Gnome, live-verified on fire/range/wine legs), AdminCommands (phase 38 — `::item` only, the first registered command, live-verified: admin spawn + denial path), WildernessDitch (phase 40 — `Cross` on object 23271 with the ForceMovement glide + click delay, live-verified: south/north/turn crossings + the wall leg), Shopkeepers (phase 41 — `shops.json` npcInteractions bindings via onAnyNpcInteraction + 19 item / 13 point currencies, live-verified: shop-open/buy/sell/shared/tokkul legs, 32 checks), all live-verified; the rest per `CONTENT_MIGRATION_PLAN.md`, piece by piece with Tyler's direction; no wholesale port) |
+| P3 | All `plugins/` content (2,907 JS files, 789,355 lines) | Go packages under `internal/content/` | PARTIAL (13 of 577 entries ported: DateMinutes (phase 10), GracefulOutfit + WornWeights (phase 22), LumbridgeGuide (phase 23), SeekingArrows (phase 24), Woodcutting (phases 32–33 — core loop + all sub-units except the Guild, which needs Tyler's `woodcutting-guild.json` import approval), Fletching (phase 34 — full skill: Shared loop, Recipes, Spool, Diaries, CreationMenu seam, all live-verified), Fishing (phase 35 — core loop + 8 of 10 sub-units, MinnowPlatform / Gita exchange / Guild door deferred, live-verified in 4 modes), Cooking (phase 36 — full skill: Cookers, Recipes, Wine, Churn, SacredEel, LeapingFish, Gnome, live-verified on fire/range/wine legs), AdminCommands (phase 38 — `::item` only, the first registered command, live-verified: admin spawn + denial path), WildernessDitch (phase 40 — `Cross` on object 23271 with the ForceMovement glide + click delay, live-verified: south/north/turn crossings + the wall leg), Shopkeepers (phase 41 — `shops.json` npcInteractions bindings via onAnyNpcInteraction + 19 item / 13 point currencies, live-verified: shop-open/buy/sell/shared/tokkul legs, 32 checks), Mining (phase 42 — full skill: core loop + all 8 sub-units, live-verified: copper/tin, depletion, full-inventory, walk-away legs, 18 checks), all live-verified; the rest per `CONTENT_MIGRATION_PLAN.md`, piece by piece with Tyler's direction; no wholesale port) |
 | P3 | Bots: `plugins/bots/` + bot runtime | undecided | NOT STARTED |
 | P3 | WebRTC transport | undecided | NOT STARTED |
 | P3 | Browser host: `BrowserHostHttpBridge`, IndexedDB persistence | undecided | NOT STARTED |
@@ -3898,6 +3946,51 @@ pick is Tyler's. Verification counts are unchanged from phase 24
     — the counter/wall blocks the route — so the tokkul leg
     seeds adjacent (2464,5150); a routing observation, not
     a shop bug.
+
+25. Phase 42 residual gaps (Mining; all documented at the
+    port sites, none silent): (a) The calcified-water cycle
+    and the ancient-essence spot movement run on the
+    MiningTask, so they start on the first Mine, not at
+    boot (a Register-time TaskManager capture reads nil
+    per the hub contract; a startup hook would Schedule
+    off the tick goroutine). (b) No `forceAdd` in Go —
+    clue geodes (and gems) ground-drop when the inventory
+    is full. (c) XP integer truncation (17.5 → 17, infernal
+    Smithing 3.6 → 3) — same gap as 16–19. (d)
+    `player:interaction-cleared` / `player:emote` /
+    `level-up:popup-opened` handlers are registered but
+    their emitters do not exist in Go yet (the level-up
+    pause never fires); no SkillLevelUp emitter exists.
+    (e) `mining:level-boost`, `mining:respawn-ticks`,
+    `mining:tool`, `storage:room`/`storage:gather`,
+    `pets:skilling-roll`, `treasure-trails:*`,
+    `combat-achievements:tier` are answer-only/defaults —
+    no producers in this phase (Mining Guild needs the
+    level-boost + respawn-ticks answers; the coal bag
+    needs storage; geodes fall back to an inventory+bank
+    name scan with no CA factor). (f) Motherlode Mine and
+    Shooting Stars are separate plugins, NOT STARTED; the
+    Mining Guild is NOT STARTED (no data file; needs the
+    answers in (e)). (g) No Prospect action on rocks —
+    the only Prospect action is Crashed Stars / Shooting
+    Stars, a separate plugin; Mining registers Mine only.
+    (h) The plugin's `ROCKS[].objectIds` numeric literals
+    contradict the rev-242 cache (copper 7453/7484 are a
+    door and a wall pile) — TS never reads them in the
+    loop, registration is by object name and depletion
+    resolves from the runtime loc's gameval, so the Go
+    tables store NO rock object ids. (i) Sub-units
+    unit-covered only, not observed live: AncientEssence,
+    CalcifiedWater, ClueGeodes, CrystalPickaxe,
+    InfernalPickaxe, ProspectorOutfit, Saltpetre,
+    VarrockArmour (the live legs cover the core loop:
+    copper/tin, depletion, full-inventory, walk-away).
+    (j) Essence rocks (15410/16687/34773) have NO
+    placements in the rev-242 cache — the essence mine
+    region appears unloadable, so the essence leg is
+    unobservable live. (k) The ores-mined varp is
+    `tracking_ore_mined`, cache varp id 4526, load-proven
+    against the real cache.
 
 ## Next modules, in priority order
 

@@ -23,14 +23,16 @@ func TestNewPluginHubLoadsCompiledInContent(t *testing.T) {
 	// (phase 35, no members flag — F2P) loads between WornWeights
 	// and Woodcutting. Woodcutting loads after WornWeights in
 	// the observed load order (Go init order, not the order of
-	// the blank imports in pluginwiring.go). Cooking (phase 36,
-	// no members flag — F2P) loads last.
+	// the blank imports in pluginwiring.go). Mining (phase 42,
+	// no members flag — F2P) loads between Fishing and
+	// Woodcutting. Cooking (phase 36, no members flag — F2P)
+	// loads last.
 	hub, err := newPluginHub(&config.World{}, log.Default(), nil)
 	if err != nil {
 		t.Fatalf("newPluginHub: %v", err)
 	}
 	loaded := hub.Loaded()
-	want := []string{"AdminCommands", "DateMinutes", "LumbridgeGuide", "Shopkeepers", "WildernessDitch", "WornWeights", "Fishing", "Woodcutting", "Cooking"}
+	want := []string{"AdminCommands", "DateMinutes", "LumbridgeGuide", "Shopkeepers", "WildernessDitch", "WornWeights", "Fishing", "Mining", "Woodcutting", "Cooking"}
 	if len(loaded) != len(want) {
 		t.Fatalf("Loaded() = %v, want %v", loaded, want)
 	}
@@ -55,14 +57,16 @@ func TestNewPluginHubLoadsMembersContentOnMembersWorld(t *testing.T) {
 	// flag — F2P) loads between WornWeights and Fletching, and
 	// Woodcutting (phase 32, no members flag) loads before
 	// Cooking (phase 36, no members flag — F2P), which loads
-	// last. AdminCommands (phase 38, no members flag) loads
-	// first, before DateMinutes.
+	// last. Mining (phase 42, no members flag — F2P) loads
+	// between Fletching and Woodcutting. AdminCommands
+	// (phase 38, no members flag) loads first, before
+	// DateMinutes.
 	hub, err := newPluginHub(&config.World{MembersWorld: true}, log.Default(), nil)
 	if err != nil {
 		t.Fatalf("newPluginHub: %v", err)
 	}
 	loaded := hub.Loaded()
-	want := []string{"AdminCommands", "DateMinutes", "GracefulOutfit", "LumbridgeGuide", "SeekingArrows", "Shopkeepers", "WildernessDitch", "WornWeights", "Fishing", "Fletching", "Woodcutting", "Cooking"}
+	want := []string{"AdminCommands", "DateMinutes", "GracefulOutfit", "LumbridgeGuide", "SeekingArrows", "Shopkeepers", "WildernessDitch", "WornWeights", "Fishing", "Fletching", "Mining", "Woodcutting", "Cooking"}
 	if len(loaded) != len(want) {
 		t.Fatalf("Loaded() = %v, want %v", loaded, want)
 	}
@@ -77,7 +81,7 @@ func TestNewPluginHubSwitchDisablesDateMinutes(t *testing.T) {
 	// A world.json switch turning DateMinutes off keeps it out of
 	// the loaded set, and the hub logs it as disabled. AdminCommands,
 	// LumbridgeGuide, Shopkeepers, WildernessDitch, WornWeights,
-	// Woodcutting, Fishing and Cooking (no switches) still load
+	// Woodcutting, Fishing, Mining and Cooking (no switches) still load
 	// (AdminCommands first; Shopkeepers between LumbridgeGuide and
 	// WildernessDitch; Fishing between WornWeights and Woodcutting;
 	// Cooking last); GracefulOutfit stays gated out of the free world.
@@ -86,8 +90,8 @@ func TestNewPluginHubSwitchDisablesDateMinutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newPluginHub: %v", err)
 	}
-	if loaded := hub.Loaded(); len(loaded) != 8 || loaded[0] != "AdminCommands" || loaded[1] != "LumbridgeGuide" || loaded[2] != "Shopkeepers" || loaded[3] != "WildernessDitch" || loaded[4] != "WornWeights" || loaded[5] != "Fishing" || loaded[6] != "Woodcutting" || loaded[7] != "Cooking" {
-		t.Fatalf("Loaded() = %v, want [AdminCommands LumbridgeGuide Shopkeepers WildernessDitch WornWeights Fishing Woodcutting Cooking]", loaded)
+	if loaded := hub.Loaded(); len(loaded) != 9 || loaded[0] != "AdminCommands" || loaded[1] != "LumbridgeGuide" || loaded[2] != "Shopkeepers" || loaded[3] != "WildernessDitch" || loaded[4] != "WornWeights" || loaded[5] != "Fishing" || loaded[6] != "Mining" || loaded[7] != "Woodcutting" || loaded[8] != "Cooking" {
+		t.Fatalf("Loaded() = %v, want [AdminCommands LumbridgeGuide Shopkeepers WildernessDitch WornWeights Fishing Mining Woodcutting Cooking]", loaded)
 	}
 	if !strings.Contains(buf.String(), "disabled=") {
 		t.Errorf("hub log %q does not report the disabled plugin", buf.String())
