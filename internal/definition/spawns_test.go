@@ -152,6 +152,92 @@ func TestNpcSpawnCacheDirection(t *testing.T) {
 	}
 }
 
+func TestNpcSpawnShippedFileFields(t *testing.T) {
+	// Missing name -> "", the entry's `source` provenance field is
+	// ignored, duplicate (id,x,y,level) keys inside one source are
+	// all kept, and `level` lands on Z.
+	store := loadSpawns(t, withFiles(map[string]string{
+		"npc-spawns.json": `[
+			{"level":2,"x":1,"y":1,"id":14048},
+			{"level":0,"x":2,"y":2,"id":5,"name":"A","source":"wiki"},
+			{"level":0,"x":2,"y":2,"id":5,"name":"B","source":"rsprox:123"},
+			{"level":0,"x":2,"y":2,"id":5,"name":"C"}
+		]`,
+	}), LoadOptions{})
+	spawns := store.NPCSpawns()
+	if len(spawns) != 4 {
+		t.Fatalf("spawns = %v", spawns)
+	}
+	if spawns[0].Name != "" || spawns[0].Z != 2 {
+		t.Fatalf("nameless spawn = %+v", spawns[0])
+	}
+	if spawns[1].Source != "NpcSpawns" || spawns[1].Name != "A" {
+		t.Fatalf("sourced spawn = %+v", spawns[1])
+	}
+	if spawns[2].Name != "B" || spawns[3].Name != "C" {
+		t.Fatalf("duplicate spawns = %+v", spawns[1:])
+	}
+}
+
+// TestNpcSpawnShippedFile loads the repo's shipped
+// data/definitions/npc-spawns.json with no cache (so the count is
+// cache-independent: with no cache bound, no entry is dropped as
+// unsupported) and pins the accepted count. The one invalid entry
+// is Elena, whose `key` cannot resolve without the generated
+// NpcIdentifiers table (see TestNpcSpawnKeyedEntryDropped); every
+// other entry is accepted, including the 45 id-0 Tool Leprechauns.
+func TestNpcSpawnShippedFile(t *testing.T) {
+	var logs logCapture
+	store, err := Load("../../data/definitions", LoadOptions{Logf: logs.logf})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	spawns := store.NPCSpawns()
+	if len(spawns) != 30827 {
+		t.Fatalf("shipped spawns = %d, want 30827 (logs: %s)", len(spawns), logs.joined())
+	}
+	if !logs.contains("candidates=30828, invalid=1, unsupported=0, failures=0") {
+		t.Fatalf("loader counts missing from logs: %s", logs.joined())
+	}
+	for _, sp := range spawns {
+		if sp.Name == "Elena" && sp.X == 2592 && sp.Y == 3336 {
+			t.Fatalf("Elena spawn present, want dropped (unresolvable key)")
+		}
+	}
+	lep := 0
+	for _, sp := range spawns {
+		if sp.ID == 0 && sp.Name == "Tool Leprechaun" {
+			lep++
+		}
+	}
+	if lep != 45 {
+		t.Fatalf("id-0 Tool Leprechauns = %d, want 45", lep)
+	}
+	for _, w := range []struct {
+		id, x, y, z, radius int
+		name                string
+	}{
+		{12119, 3096, 3238, 0, 0, "Friendly Forester"},
+		{3036, 3002, 3206, 0, 5, "Goblin"},
+		{1174, 3225, 3300, 0, 5, "Chicken"},
+		{1525, 3085, 3230, 0, 0, "Fishing spot"},
+	} {
+		found := false
+		for _, sp := range spawns {
+			if sp.ID == w.id && sp.X == w.x && sp.Y == w.y && sp.Z == w.z {
+				found = true
+				if sp.Name != w.name || sp.WanderRadius != w.radius {
+					t.Errorf("spawn %d at (%d,%d): %+v, want name %q radius %d", w.id, w.x, w.y, sp, w.name, w.radius)
+				}
+				break
+			}
+		}
+		if !found {
+			t.Errorf("spawn %d at (%d,%d,%d) not found", w.id, w.x, w.y, w.z)
+		}
+	}
+}
+
 func TestNpcSpawnMergeReplaceAndRemove(t *testing.T) {
 	core := `[
 		{"level":0,"x":1,"y":1,"id":5,"name":"A"},

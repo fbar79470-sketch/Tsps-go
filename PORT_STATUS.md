@@ -536,7 +536,36 @@ all skills — see "Next modules".)
   lowercase gameval, 176 via the fallback table — 3 of
   those pin gameval mis-resolutions: opal/pearl/barbed
   bolts), 68 sequence names + 3 sounds + 3 varbits all
-  resolving.
+  resolving. The same applies to
+  `data/definitions/npc-spawns.json` (30,828 entries),
+  `npc-combat-defs.json` (963 NPC entries + 179 refs rows +
+  humanoid defaults), `npc-animations.json` (3,383 id →
+  sequence-array entries) and `shops.json` (487 shops,
+  5,471 originalStock lines), imported verbatim 2026-11-21
+  on Tyler's approval — npc-spawns.json on his "Add npc
+  spawns" request, the other three on his "Also add
+  npc-combat-defs npc-animations and shops" — SHA-256
+  verified identical to upstream (`aa6e04af...` spawns,
+  `429e4b06...` combat-defs, `be12ec7d...` animations,
+  `60865b1f...` shops); `npc-animations.LICENSE` (BSD
+  2-Clause, Adam/sigterm + Null, `5dac153c...`) copied
+  alongside so the attribution travels with the data. No
+  loader work was needed — all four loaders already
+  existed (spawns, `loadNpcDefinitions`, `loadShops`); the
+  repo had held `{}` starters for the three animation/shop
+  files and no spawn file at all. Load-proven against the
+  real rev-242 cache by a temporary test, then the test was
+  deleted: spawns accepted 30,827 (candidates 30,828,
+  invalid 1 — Elena, see §22, unsupported 0, failures 0);
+  combat-defs spot-resolve Rat 2854 attack 2705 / block
+  2706 / death 2707, Goblin 3036 6184/6183/6182, Chicken
+  1174 5387/5388/5389, Imp 5007 169/170/172, Man 3108
+  422/425/836; inferred-from-animations Guard 3254
+  386/388/836, Dark wizard 512 711/425/836; Forester
+  12119 (in neither file) the TS DEFAULT shape 422/-1/836;
+  shops 487 with 5,471 stock lines, shop 0 "General Store"
+  stock exactly 590/1351/1265/946/2347/1755 × 2,000,000,000.
+  Live-verified in smoke39 (see §22 for the legs).
 
 ## Module inventory
 
@@ -711,9 +740,12 @@ the required files. `NpcSpawnDefinition` merge semantics
 (priority-order sources, one-for-one replacement, remove
 markers with freed-slot credits), direction tables
 (client/spawn numbering), and the default wander radius (5)
-are ported; `key`-based spawns (generated `NpcIdentifiers`,
-never ported) are skipped with a warning, matching TS
-unknown-key behavior. Dialogue data loading is DONE (phase
+are ported; `key`-based spawns are skipped with a warning
+because the generated `NpcIdentifiers` table was never
+ported — that is a real 1-entry gap, not TS behavior: TS
+resolves the file's only keyed entry (Elena, `key: "ELENA"`
+→ id 1102) and spawns her, Go drops her (see §22).
+Dialogue data loading is DONE (phase
 14, `dialogue.go`): `npc-dialogues.json` is REQUIRED
 (missing/malformed fails boot, as the TS loader's throw
 fails the NpcDialogues registration), `event-dialogues.json`
@@ -3629,6 +3661,79 @@ pick is Tyler's. Verification counts are unchanged from phase 24
     (b) `::give`, `::items` (search UI) and every other
     admin command in `AdminCommands.plugin.js` are NOT
     STARTED — `::item` is the only command registered.
+
+22. Phase 39 residual gaps (NPC spawns + npc-combat-defs /
+    npc-animations / shops; all documented at the port
+    sites, none silent): (a) Elena: the spawn file's only
+    keyed entry (`{"level":0,"name":"Elena","x":2592,
+    "y":3336,"key":"ELENA"}`) is dropped — Go has no
+    `NpcIdentifiers` table, so the loader warns `Unknown
+    NpcIdentifiers key "ELENA"` and skips her. TS resolves
+    ELENA → 1102 and spawns her. The file stays verbatim;
+    do not hand-edit an id into it. (b) Tool Leprechaun:
+    45 entries carry `"id": 0`. Both TS and Go keep id 0
+    (0 < cache NPC count 16,876), so both spawn NPC 0 at
+    those tiles — parity, but the upstream data is suspect;
+    do not "fix" the ids. (c) Eager spawning: TS defers
+    most spawns in `pendingByRegion` and activates them
+    near players; Go spawns EAGERLY — every accepted record
+    becomes a live NPC via `QueueAddNPC`
+    (`internal/game/spawns.go` header). The
+    deferred-activation machinery is NOT STARTED.
+    Consequence, measured: the add queue drains at
+    `QueueDrainCap` 150/tick (600 ms/tick), so 30,827
+    spawns take ~206 ticks ≈ 124 s to fully drain, in file
+    order (not geographic); Lumbridge-area entries span
+    file idx 0–20124 (goblins ~tick 17 / ~10 s, chickens
+    ~tick 55 / ~33 s, last Lumbridge entry ~tick 134 /
+    ~80 s). Boot cost itself is negligible: 2.85 s → 3.09 s
+    to the started line (+0.24 s). (d) No shop opens by NPC
+    click: the Shopkeepers plugin (231 lines,
+    `plugins/npcs/Shopkeepers.plugin.js`) is NOT STARTED —
+    it is the TS piece that reads `shops.json`
+    `npcInteractions` (+ `custom-shops.json` bindings) and
+    registers `NpcInteractionDefinition`s with
+    `core.shops.open` actions. The Go loader ignores
+    `npcInteractions`, `loadInteractions` has zero
+    contributed sources (`Store.Interaction()` is always
+    empty), and no shipped dialogue opens a shop (the
+    `open_shop` transcript step exists but zero dialogue
+    rows use it). The ShopManager holds all 487 shops with
+    stock (load-proven), but there is no client-reachable
+    trigger to open one — including the General Store (shop
+    0), whose own `npcInteractions` is empty in the file.
+    Porting Shopkeepers is the fix; it is content work,
+    not a data import. (e) Forester cache name: NPC
+    12119's rev-242 cache name is literally `"null"`; the
+    spawn file carries "Friendly Forester" and the spawn
+    uses the file name. TS reads the same cache, so parity
+    holds; noted, not a defect. (f) Live legs (smoke39,
+    real rev-242 cache, run singly): presence 7/7
+    (Edgeville set in sync; the first attempt failed 2
+    checks — Imp 5007 ~30 tiles and Banker 1613 ~35 tiles
+    away, beyond the ~15-tile NPC view distance — so the
+    presence set was corrected to NPCs within ~13 tiles),
+    lumbridge 6/6 (Forester 12119 radius 0 at (3096,3238)
+    first-seen 1 s; Dark wizard 512, Banker 1613, Man 9392,
+    Fishing spot 1525 all 6 s), chickens PASS (7 chickens
+    1174 in view), goblins PASS (5 goblins near
+    (3002,3206)), wander PASS (Shop keeper 2821 moved
+    (3080,3511) → (3079,3512) within radius 3; Forester
+    12119 unmoved in 60 s), respawn PASS (Goblin 3036 died,
+    death anim 6182 on the wire, count in the circle 1 → 0
+    → 1, i.e. the respawn clone fired for a file-loaded
+    spawn), combatanims PASS (Goblin 3036 attack 6184 /
+    block 6183 / death 6182 all on the wire — the
+    npc-combat-defs.json values, not the cache scanner's
+    guesses). The two legs were retargeted from the
+    Edgeville rats to the Goblin House goblins because the
+    rats live inside a walled pen (cache clip grid + walk
+    probe: the player stops at (3117,3485) and combat
+    cancels with "I can't reach that!") — correct game
+    behavior for attacking through a wall, not a port bug;
+    see PHASE39_PLAN.md Results. The `walkprobe` mode stays
+    in the smoke39 driver as the pen-access diagnostic (it
+    FAILs by design).
 
 ## Next modules, in priority order
 
