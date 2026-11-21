@@ -11,18 +11,29 @@ import (
 
 // NewHandler returns the HTTP handler for the game server, porting the
 // NetworkBuilder.initialize equivalent (NetworkBuilder.ts:347-434) in
-// minimal form: one HTTP server, WebSocket upgrade at any path, 404 for
-// everything else. The coordinator wires it in cmd/server with
+// minimal form: one HTTP server, WebSocket upgrade at any path, the
+// gateway endpoints when gateway is non-nil, and 404 for everything
+// else. A nil gateway preserves the old behaviour: every non-WebSocket
+// request gets 404. The coordinator wires it in cmd/server with
 // http.ListenAndServe on the configured WebSocket port.
+//
+// Gateway routing mirrors TS (NetworkBuilder.ts:347-371): no method
+// check on gateway paths, and Access-Control-Allow-Origin: * on every
+// response. The match is against the raw (escaped) path —
+// r.URL.EscapedPath(), not the decoded r.URL.Path — because TS
+// matches the raw request URL string; a %XX escape in the path must
+// not decode into a gateway path.
 //
 //   - The WebSocket server attaches to the HTTP server with no path
 //     restriction in TS (new WebSocketServer({server: http, ...})), so
 //     any path upgrades. The upgrader disables compression
 //     (perMessageDeflate: false) and the channel enforces the 64 KiB
 //     read limit (maxPayload: MAX_GAME_MESSAGE_BYTES).
-//   - Non-WebSocket HTTP requests get 404. The TS routes served on the
-//     same port are NOT implemented in this run: ContentApi (/api/*),
-//     GatewayTarget (/gateway/jav_config.ws, /gateway/worldlist.ws),
+//   - Non-WebSocket HTTP requests get 404, except the gateway
+//     endpoints (GatewayTarget: /gateway/jav_config.ws and
+//     /gateway/worldlist.ws), served when the handler was built
+//     with a non-nil gateway target. The TS routes served on the
+//     same port that are NOT implemented in this run: ContentApi (/api/*),
 //     the /regions endpoints, and the browser-host bridge page/handler
 //     (BROWSER_HOST=1). WebRTC registration is not implemented either.
 //   - Like TS, cross-origin WebSocket handshakes are accepted (the ws
@@ -33,7 +44,7 @@ import (
 // synchronously during the upgrade. The handler sends the welcome
 // packet, starts the idle/pending-login checks, and runs the read loop
 // until the connection closes or errors, then cleans up.
-func NewHandler(newConn func(Channel) *Connection) http.Handler {
+func NewHandler(newConn func(Channel) *Connection, gateway *GatewayTarget) http.Handler {
 	upgrader := websocket.Upgrader{
 		EnableCompression: false,
 		CheckOrigin:       func(r *http.Request) bool { return true },
@@ -41,6 +52,13 @@ func NewHandler(newConn func(Channel) *Connection) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !isWebSocketUpgrade(r) {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
+			if gateway != nil {
+				if contentType, body, ok := gateway.Resolve(r.URL.EscapedPath()); ok {
+					w.Header().Set("Content-Type", contentType)
+					_, _ = w.Write(body)
+					return
+				}
+			}
 			http.NotFound(w, r)
 			return
 		}

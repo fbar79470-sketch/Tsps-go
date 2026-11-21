@@ -35,6 +35,7 @@ func run() error {
 		NoCache:     *noCache,
 		TickRateMs:  *tickMs,
 		SaveBackend: *saveBackend,
+		Port:        *portFlag,
 	})
 	if err != nil {
 		return err

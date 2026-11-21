@@ -31,8 +31,10 @@
 //     extension: those packets are accepted and dropped; the accounts
 //     plugin owns the flow in TS.
 //   - WebRTC, the TCP listener, the browser-host bridge, ContentApi,
-//     GatewayTarget, and the /regions routes: the HTTP handler upgrades
-//     WebSocket connections at any path and answers 404 otherwise.
+//     and the /regions routes: the HTTP handler upgrades WebSocket
+//     connections at any path, serves the GatewayTarget endpoints
+//     when built with a gateway target (see gateway.go), and
+//     answers 404 otherwise.
 //   - Bot control (controlPlayer/releasePlayerControl/endPlayerControl),
 //     stalled-input holding, and plugin-message handling: no plugin system
 //     exists in Go yet.

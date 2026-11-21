@@ -66,6 +66,11 @@ type Options struct {
 	// Log is the logger used for boot and runtime messages. Nil
 	// means log.Default().
 	Log *log.Logger
+	// Port is the --port flag value (0 = WEBSOCKET_PORT env, then
+	// 43594, via Server.Port). It is the port the gateway
+	// jav_config's worldlist URL names, so it is resolved in
+	// buildServer before the gateway target is constructed.
+	Port int
 }
 
 // Server wires the ported packages into a runnable game server: world
@@ -567,7 +572,19 @@ func buildServer(opts Options) (*Server, error) {
 	})
 	s.handler = session.NewHandler(func(ch session.Channel) *session.Connection {
 		return session.NewConnection(ch, loginDeps, adapter, tickRateMs)
-	})
+	}, session.NewGatewayTarget(
+		// The gateway worldlist URL names the actual listen port
+		// (NetworkBuilder.initialize passes port to
+		// GatewayTarget.resolve). s.Port is the same deterministic
+		// computation main.go runs again for ListenAndServe; s.env
+		// and s.logger are already set in the Server literal above.
+		// Type flags 0 / activity "" are the TS defaults
+		// (GameConstants.WORLD_TYPE, GameConstants.ts:54): the Go
+		// world definition carries no world-type source (no
+		// setWorldType equivalent; world.json has no
+		// type/flags/activity key).
+		s.Port(opts.Port), s.revision, worldDef.MembersWorld, 0, "", s.logger,
+	))
 	return s, nil
 }
 

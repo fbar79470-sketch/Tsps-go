@@ -8,23 +8,20 @@ findings) lives outside this repository; status values below mean:
 ported, gaps listed), **NOT STARTED** (absent — nothing here
 pretends otherwise).
 
-Last updated: 2026-11-21 (phase 36 run: Cooking — the
-fourth skill, F2P, chosen by Tyler 2026-11-20. The whole
-skill is ported — Cookers core loop (timing 2/3/4, gates in
-TS order, Hosidius +12, gauntlets, deliberate burn,
-karambwan), Recipes + doughs, Wine (20-tick ferment),
-Churn, SacredEel, LeapingFish, Gnome — behind the Go loader
-for the verbatim `cooking.json` Tyler approved 2026-11-20,
-and the `cooking:raw-xp` answerer unblocks Phase 35's
-infernal-harpoon cook. Hub counts unchanged (57 of 108
-families firable, 61 registration methods — 4 named
-overloads). 4,648 tests passing, race clean, live smoke 3
-modes × 3 runs with 0 failures (fire → shrimps, 30 XP,
-burns observed; range → shrimps, sardines untouched; wine
-→ jug of wine, 200 XP per good jug). No data file was
-imported in this phase — `cooking.json` was imported by
-the parent before the phase began; the phase built its
-loader. Quests are postponed per Tyler's 2026-11-16
+Last updated: 2026-11-21 (phase 37 run: RSProx gateway
+endpoints — `GatewayTarget`, approved by Tyler
+2026-11-20. Two static endpoints on the game port:
+`GET /gateway/jav_config.ws` (30 lines, byte-exact vs
+TS, param=25 = cache revision, host from `PUBLIC_HOST`
+or 127.0.0.1) and `GET /gateway/worldlist.ws`
+(one-world binary list, members flag from the world
+definition) — both live-verified against the real
+rev-242 cache, members and non-members, with and
+without `PUBLIC_HOST`. The external runelite-gateway
+process itself was NOT run (out of scope). Hub counts
+unchanged (57 of 108 families firable, 61 registration
+methods — 4 named overloads). 4,664 tests passing.
+Quests are postponed per Tyler's 2026-11-16
 instruction (Doric's Quest picked but deferred); Tyler
 decided 2026-11-17: combat leftovers first, then adding
 all skills — see "Next modules".)
@@ -32,60 +29,66 @@ all skills — see "Next modules".)
 ## What was verified in this run
 
 - `go build ./...`, `go vet ./...`, `gofmt -l .`: clean.
-  `CGO_ENABLED=0 go build ./...`: clean. 759 `.go` files,
-  21 packages (new `internal/content/cooking`).
-- `go test ./... -p 1 -count=1`: all 21 packages pass (4,648
-  passing test cases including subtests, 0 failures, 0
-  skips — 4,534 from phase 35 + 114 new, exactly the cooking
-  package: 37 tables/loader/Common/answerers/Recipes, 29
-  Cookers/wiring, 48 Wine/Churn/SacredEel/LeapingFish/Gnome).
-  `go test ./... -p 1 -count=1 -race`: passes, 21/21, 0 data
-  races. (The pre-existing `TestEngineTicksAtRate` timing
-  test appeared once as a flake in a worker's run and
-  passed serialized; the final full run had 0 failures;
-  no tolerance change was made.)
-- Live phase-36 smoke tests (throwaway harness in
-  `/home/hatch/smoke36/`, three modes driving a real
-  WebSocket client against the real server binary + real
-  rev-242 cache from temp data roots outside the repo;
-  harness + roots kept at `/home/hatch/smoke36/`): 3 modes
-  × 3 runs, 0 failures, each from a fresh temp root, runs
-  executed singly via a `RUNS` override (a full pass
-  exceeds the background-exec wall clock). `cooking-fire`
-  (Cooking 1, 10 raw shrimps 317 one per slot, spawned Fire
-  3769 at (3242,3147), alice at (3241,3147)): use on fire
-  → CreationMenu script 2046 + fire anim 897 on the wire,
-  choose 10 → 10 cook results; run 1: 5 cooked (315) + 5
-  burnt (7954), 150 XP; run 2: 6 + 4, 180 XP; run 3: 3 + 7,
-  90 XP (30 XP per success; burns observed live in all 3
-  runs). `cooking-range` (Cooking 1, 10 raw shrimps + 10 raw
-  sardines 327 one per slot, spawned Range 7183 at
-  (3242,3147)): left-click Cook → many-types menu 2046 +
-  range anim 896 on the wire, choose shrimps ×5; run 1:
-  4 + 1, 120 XP; run 2: 4 + 1, 120 XP; run 3: 1 + 4, 30 XP;
-  sardines untouched (10 raw left) every run. `cooking-wine`
-  (Cooking 35, 5 grapes 1987 + 5 jugs of water 1937):
-  grapes on jug → make menu 2046, choose 5 → "You squeeze
-  the grapes into the jug. The wine begins to ferment." on
-  the wire, ferment 20 ticks after the last make; run 1: 2
-  jugs of wine (1993), 400 XP; run 2: 4, 800 XP; run 3: 3,
-  600 XP (200 XP per good jug; the rest went bad at the
-  ~60% level-35 chance). Two harness bugs were found by the
-  first smoke runs and fixed before the passing runs (both
-  harness-side, none in the port): (1) the seed put 10
-  unstackable raw shrimps in one slot — the container's
-  non-stackable delete correctly clears the whole slot, so
-  one cook ate all 10 (seed fixed: one per slot); (2) the
-  checks asserted 10 XP per shrimp (the fishing catch XP)
-  where cooking pays 30 (seed/checks fixed). One real port
-  bug was found by the coordinator's load-prove and fixed
-  before the smoke: `LoadCookerIDsFromCache` resolved
-  `poison_karambwan` / `cooking_gauntlets` as cache gamevals
-  (boot-blocking) and SacredEel resolved `sacred_eel` /
-  `zulrahs_scales` the same way — the rev-242 cache has no
-  such gamevals; TS reads all four through `core.ItemIds`,
-  so they now come from `itemIDConstants` (3146 / 775 /
-  13339 / 12934, transcribed from `ItemIdentifiers.ts`).
+  `CGO_ENABLED=0 go build ./...`: clean. 761 `.go` files,
+  21 packages (new `internal/session/gateway.go`).
+- `go test ./... -p 1 -count=1 -v`: all 21 packages pass
+  (4,664 passing test cases: 3,516 top-level + 1,148
+  subtests, 0 failures, 0 skips — 4,648 from phase 36 + 16
+  new, exactly the 11 gateway tests + 5 handler routing
+  tests).
+- `go test -race ./...` (full run) does NOT pass cleanly
+  on this tree under load — and the same run on the clean
+  phase-36 tree (commit `93250d7`, git worktree) fails
+  the same way, so this is pre-existing, not a phase-37
+  regression: (a) `internal/game` `TestEngineTicksAtRate`
+  fails (the known 5 ms timing flake under race
+  slowness; it passes serialized, tolerance untouched);
+  (b) `cmd/server` timing-sensitive savewiring tests fail
+  under race load — on the baseline tree three of them
+  time out (`TestShutdownEngineDrivenSavesWalkedPosition`,
+  `TestReloginResumesAtWalkedTile`,
+  `TestReloginRoundTripOverWebSocket`: "timed out waiting
+  for walk arrival / disconnect save"); on this tree
+  `TestReloginResumesAtWalkedTile` failed with one genuine
+  data-race report instead: package-level combat-cycle
+  source written by `SetCombatCycleSource`
+  (`internal/game/combatant.go:484`, via
+  `InstallCombatSources` in `cmd/server/combatwiring.go:413`
+  during a second `buildServer`) while a first server's
+  tick goroutine reads it (`combatCycle()`,
+  `combatant.go:495`). That race is pre-existing code the
+  phase did not touch (the phase diff is only
+  `gateway.go`, `handler.go`, `server.go` wiring,
+  `main.go`, `doc.go`, and tests) and it does not
+  reproduce in isolation: the single test passes 3/3
+  with `-race` on both trees. It is a real race worth
+  fixing, but it is not this phase's scope; the
+  non-race suite above is green.
+- Live phase-37 checks (throwaway roots outside the repo,
+  real server binary + real rev-242 cache, roots kept at
+  `/home/hatch/live37/` and `/home/hatch/live37-f2p/`):
+  server on :49703 with the real cache — `GET
+  /gateway/jav_config.ws` → 200, 649 bytes, byte-exact
+  against an expectation derived independently from
+  `GatewayTarget.ts` (41 parsed lines, host 127.0.0.1,
+  port 49703, `param=25=242`); `GET
+  /gateway/worldlist.ws` → 200, 30 bytes, decoded
+  length=26, count=1, id=1, flags=0x1 (members), host
+  127.0.0.1, activity `tsps`, location 0, population 0.
+  Routing: query string → 200, POST → 200 (no method
+  check, as in TS), `/gateway/jav_config.ws/extra` →
+  404, unknown paths → 404, plain `/` → 404, both
+  responses carry `Access-Control-Allow-Origin: *` and
+  the correct Content-Type. Second server on :49704
+  with `PUBLIC_HOST=play.example.com` and an F2P
+  world.json (freetoplay plugin enabled + an `f2p`-tagged
+  zone covering the spawn, temp root only): codebase
+  `http://play.example.com/`,
+  `param=17=http://play.example.com:49704/gateway/worldlist.ws`,
+  worldlist flags=0x0, host `play.example.com`,
+  activity `tsps`, 37 bytes. Both live servers stopped
+  afterwards; the `/home/hatch/live36` servers were not
+  touched.
   Honest limits: only the three smoke legs were observed
   live; Gnome, Churn, SacredEel, LeapingFish, doughs,
   karambwan, the other 167 recipes, and the infernal-harpoon
@@ -564,7 +567,7 @@ all skills — see "Next modules".)
 | P2 | Skill frameworks, `Trading`, `PrayerHandler` | `internal/game` (prayer, trading) | PARTIAL (combat-facing prayer surface DONE since phase 16: all 30 prayers, conflict groups, protection-prayer mapping in the damage pipeline, drain state/resistance; level requirements, varbit glow, and sounds NOT STARTED — interface-layer concerns; `Trading` DONE since phase 17 (requests, offer/confirm stages, transfer, gates, live-verified) + `Duelling` state + the duel-order shuffle exception (Duel Arena gameplay NOT STARTED); skill frameworks NOT STARTED) |
 | P2 | Shop system: `ShopManager`, shop stock/pricing/currencies | `internal/game` (shop_*), `internal/protocol` (shop encoders), `internal/session` (sender), `cmd/server` (shop wiring) | DONE (phase 17, live-verified: definitions in TS load order with the `onCanStockItem` veto, stock/restock, rated + legacy pricing, currencies incl. content-registered ones, access rules, NPC Trade dispatch + dialogue shop steps, widget buy/sell with TS-exact refusal text, close behavior; runtime-only stock, no save fields beyond `shop:points`/`shop:quantity-mode` attributes — see notes; Grand Exchange marketplace NOT STARTED, plugin content) |
 | P2 | Collision extras: `MapRegionReplacementManager`, template regions, sailing | `internal/game` (private areas, template instances, replacements, sailing, boats), `internal/session` (flush rebuild decision + replacement sender), `internal/plugins` (instancing/sailing members), `cmd/server` (wiring) | DONE (phase 21, live-verified: private areas + templated instances + template-region decoding + region replacements + sailing engine + boat sync; the sailing SKILL and Construction POH content are NOT STARTED — plugin content; residual gaps: `viewedArea` object sync, the `sceneTile` root-location term, deck-object lookup, camera state, destroy-hook splicing — see notes) |
-| P2 | HTTP extras: `ContentApi`, `GatewayTarget`, `/regions` routes | — | NOT STARTED (handler 404s non-WS HTTP) |
+| P2 | HTTP extras: `ContentApi`, `GatewayTarget`, `/regions` routes | `internal/session` (`gateway.go`), `cmd/server` (wiring) | PARTIAL (phase 37: `GatewayTarget` DONE — `GET /gateway/jav_config.ws` byte-exact vs TS (30 lines, `param=25` = cache revision, host from `PUBLIC_HOST` or 127.0.0.1, warn-once on invalid host) + `GET /gateway/worldlist.ws` one-world binary (members flag from the world definition, type flags 0 / activity `tsps` — the Go world definition carries no world-type source, which is the TS default), both live-verified against the real rev-242 cache incl. members/non-members and `PUBLIC_HOST`; `ContentApi` (`/api/*`) and the `/regions` routes still NOT STARTED — handler 404s them) |
 | P2 | Interface runtime: `Player` interface id, `PacketSender` interface mounts, `InterfaceLayoutRegistry`, `InterfaceActionClickOpcode`, entered-amount/syntax prompts, the live varp/varbit store | `internal/game` (interface id + close gate, entered actions), `internal/session` (mount tracking + sender surface, varp store), `internal/definition` (layout open dispatch), `internal/listeners` (action dispatch, prompt answers, close case), `internal/plugins` (interface families), `cmd/server` (wiring) | DONE (phase 18, live-verified: interface open/close/layering + close-on-movement/logout/death + layout open dispatch on all 7 surfaces + action dispatch to hub hooks with prompt-first order + entered-amount/syntax prompts + varp/varbit store with change detection, varbit packing, and replay; session-only, nothing persists; `VarManager` transform plumbing, `registerCustomInterface`, bank interface flows, and the per-player vars seam are gaps — see notes) |
 | P2 | Clans/social: `PlayerRelations`, social-packet dispatch, friends-chat-snapshot + clan encoders | `internal/game` (relations, names, chat gate), `internal/protocol` (social decoders/encoders), `internal/session` (social senders), `internal/listeners` (social dispatch), `internal/persist` (relations ownership), `internal/plugins` (social-packet variants), `cmd/server` (wiring) | DONE (phase 19, live-verified: whole `PlayerRelations` port + live chat gate + all 8 social-packet kinds emitted to the hub + snapshot/clan encoders + relations owned save state + logout presence-offline; friends-chat channels + the clan system are plugin content (FriendsList/Clans, NOT ported — the engine unlocks them); the legacy friend/ignore presence sends are no-ops, exactly as in TS (`PlayerSession.write` is a no-op upstream) — live presence comes from the snapshot, which content sends; chat modes session-only — see notes) |
 | P3 | Plugin hub: `PluginManager`, `PluginTypes` | `internal/plugins` + `cmd/server` (`pluginwiring.go`) | DONE (compile-time registry, dependency-ordered loading, config-declaration validation, world.json switches, members-gating, lifecycle + custom-event + command/social-packet + object-interaction + dialogue + zone + combat + shop/trade + interface + skills + world-entity-interaction hooks with per-hook error isolation, gate contracts, scoped core surface, login extensions; the social-packet family fires all 8 kinds since phase 19 (same family, not a new one — the count is unchanged); onCanAttack became firable in phase 26; onSpellDisabled + onSpellRuneBypass became firable in phase 27; onShouldDropItemsOnDeath + onShouldKeepItemOnDeath + onPlayerDefeated + onPlayerDeathItemDrop + onPlayerDeathDrops became firable in phase 28 (51 of 108); the onItemAction family became firable in phase 32 (onItemAction/onItemActionNamed/onItemFirstAction/onCanUseItem, 54 of 108); the onNpcClick family became firable in phase 33 (onNpcClick, with the NPC remains-delay + transform seams in the death flow) and the onItemOnItem family became firable in phase 33 (onItemOnItem/onItemOnItemNamed, riding INVENTORY_USE_ON kind 4 — there is no separate item-on-item opcode), and the onNpcInteraction family became firable in phase 35 (onNpcInteraction, name hooks after the onNpcClick bindings — TS order, `NPCOptionPacketListener.ts:122/:132` — with the `DefinitionName`/`Action`/`Actions` fields on the hub event; `OnNpcsInteraction`/`OnAnyNpcInteraction`/`OnBeforeNpcInteraction`/`OnNpcRoute` stay table-only), 57 of 108; 51 of 108 hook families have no registration method yet — documented in the unfired-family table with the missing system named — and 29 of 95 non-hook members are ported, and 12 of 191 Core members — see notes; hub-count correction in phase 31: earlier versions of this document said 53/108, counting registration *methods* as *families* — Go has 61 `Api.On*` methods but four are named overloads of already-counted families (`OnObjectInteractionNamed`, `OnItemOnObjectNamed`, `OnItemActionNamed`, `OnItemOnItemNamed`), so 57 distinct families are firable (61 methods) and 51 are table-only; `hooks.go`'s header says fifty-seven (updated in phase 35; the phase-35 plan's "5 named overloads" was wrong — recount: exactly 4 `*Named` methods) |
@@ -878,7 +881,8 @@ STARTED: character select/create/delete and `login_forget` are
 shape-validated then dropped (accounts-plugin owned);
 plugin-message/movement-input packets are dropped; bot control,
 stalled input, WebRTC, TCP listener, browser-host bridge,
-ContentApi/GatewayTarget/`/regions` are absent. `shownByAnother`
+ContentApi/`/regions` are absent (`GatewayTarget` DONE in
+phase 37 — see the HTTP extras row). `shownByAnother`
 (live-player display-name check) is not implemented. The TS
 microtask auto-flush and WS backpressure guards are not
 reproduced; `WebSocketChannel.Send` uses a 10 s write deadline
@@ -3586,6 +3590,30 @@ pick is Tyler's. Verification counts are unchanged from phase 24
     answerer (this phase), so the infernal cook can fire;
     it still awaits a live observation.
 
+20. Phase 37 residual gaps (gateway; all documented at
+    the port sites, none silent): (a) The external
+    runelite-gateway process was NOT run — this phase
+    makes the Go server serve what that process reads
+    (jav_config + worldlist); running RSProx end to end
+    is a separate step. (b) `s.Port(opts.Port)` is computed
+    in `buildServer` for the gateway and again in `main.go`
+    for `ListenAndServe` — the computation is identical
+    and deterministic, but on an invalid port value the
+    fallback warning logs twice (invalid-port path only).
+    (c) The full `go test -race ./...` run does not pass
+    cleanly on this tree under load (see "What was verified
+    in this run"): the same run fails on the clean phase-36
+    tree, so it is pre-existing — one genuine data race in
+    the combat-cycle source (`SetCombatCycleSource` vs
+    `combatCycle()`, `internal/game/combatant.go:484-495`)
+    plus timing-sensitive savewiring tests and the known
+    `TestEngineTicksAtRate` flake. None of it is phase-37
+    code. (d) The gateway advertises type flags 0 /
+    activity `tsps` (the TS default) because the Go world
+    definition carries no world-type source; a game mode
+    that claims a world type would need a `setWorldType`
+    equivalent wired into the gateway target first.
+
 ## Next modules, in priority order
 
 1. The engine-systems plan in `CONTENT_MIGRATION_PLAN.md`
@@ -3706,5 +3734,5 @@ pick is Tyler's. Verification counts are unchanged from phase 24
 2. The two pre-existing map/routing findings (gap 11:
    far-WALK, y=3521–3522 wall) stay out of scope until
    TS/cache grounding exists for a fix.
-3. HTTP extras (`ContentApi`, `GatewayTarget`, `/regions`),
-   then WebRTC (needs a Go stack + relay port) if required.
+3. HTTP extras (`ContentApi`, `/regions` — `GatewayTarget`
+   DONE in phase 37), then WebRTC (needs a Go stack + relay port) if required.
