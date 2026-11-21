@@ -299,6 +299,7 @@ func buildServer(opts Options) (*Server, error) {
 	shops := newShopManager(store, defs)
 	installShopHooks(shops, hub)
 	installShopHubSurfaces(hub, shops, store)
+	installShopkeepers(hub, store, defs, logger)
 	world.Hooks.Shops = func(cycle int64) { shops.Tick() }
 	world.Hooks.ShopProcessPlayer = func(p *game.Player) { shops.ProcessPlayer(p) }
 	// Dialogue data + transcript playback (see

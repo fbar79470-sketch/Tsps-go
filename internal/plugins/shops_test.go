@@ -270,6 +270,7 @@ type fakeShopDefinition struct {
 	source   string
 	stock    []ShopStockEntry
 	policy   ShopSalesPolicy
+	traders  []ShopNpcInteraction
 }
 
 func (d *fakeShopDefinition) ID() int                         { return d.id }
@@ -281,6 +282,9 @@ func (d *fakeShopDefinition) DefaultDestockTicks() int        { return 4 }
 func (d *fakeShopDefinition) SoldItemDestockTicks() int       { return 100 }
 func (d *fakeShopDefinition) Source() string                  { return d.source }
 func (d *fakeShopDefinition) SalesPolicy() ShopSalesPolicy    { return d.policy }
+func (d *fakeShopDefinition) NpcInteractions() []ShopNpcInteraction {
+	return append([]ShopNpcInteraction(nil), d.traders...)
+}
 
 type fakeShopDefinitionRegistry struct {
 	defs []*fakeShopDefinition

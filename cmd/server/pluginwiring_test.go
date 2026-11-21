@@ -17,20 +17,20 @@ func TestNewPluginHubLoadsCompiledInContent(t *testing.T) {
 	// SeekingArrows, which the members gate drops: AdminCommands
 	// (phase 38, no members flag) loads first, then DateMinutes
 	// (phase 10), LumbridgeGuide (phase 23, no members flag),
-	// WildernessDitch (phase 40, no members flag),
-	// WornWeights (phase 22), and Woodcutting (phase 32, no
-	// members flag) load, and Fishing (phase 35, no members
-	// flag — F2P) loads between WornWeights and Woodcutting.
-	// Woodcutting loads after WornWeights in the observed load
-	// order (Go init order, not the order of the blank imports
-	// in pluginwiring.go). Cooking (phase 36, no members
-	// flag — F2P) loads last.
+	// Shopkeepers (phase 41, no members flag), WildernessDitch
+	// (phase 40, no members flag), WornWeights (phase 22), and
+	// Woodcutting (phase 32, no members flag) load, and Fishing
+	// (phase 35, no members flag — F2P) loads between WornWeights
+	// and Woodcutting. Woodcutting loads after WornWeights in
+	// the observed load order (Go init order, not the order of
+	// the blank imports in pluginwiring.go). Cooking (phase 36,
+	// no members flag — F2P) loads last.
 	hub, err := newPluginHub(&config.World{}, log.Default(), nil)
 	if err != nil {
 		t.Fatalf("newPluginHub: %v", err)
 	}
 	loaded := hub.Loaded()
-	want := []string{"AdminCommands", "DateMinutes", "LumbridgeGuide", "WildernessDitch", "WornWeights", "Fishing", "Woodcutting", "Cooking"}
+	want := []string{"AdminCommands", "DateMinutes", "LumbridgeGuide", "Shopkeepers", "WildernessDitch", "WornWeights", "Fishing", "Woodcutting", "Cooking"}
 	if len(loaded) != len(want) {
 		t.Fatalf("Loaded() = %v, want %v", loaded, want)
 	}
@@ -46,12 +46,13 @@ func TestNewPluginHubLoadsMembersContentOnMembersWorld(t *testing.T) {
 	// GracefulOutfit.plugin.js), between DateMinutes and
 	// LumbridgeGuide in blank-import order, and SeekingArrows
 	// (members: true, SeekingArrows.plugin.js, phase 24)
-	// between LumbridgeGuide and WornWeights; WildernessDitch
-	// (phase 40, no members flag) loads between SeekingArrows
-	// and WornWeights; Fletching
-	// (members: true, phase 34) loads between WornWeights
-	// and Woodcutting; Fishing (phase 35, no members flag —
-	// F2P) loads between WornWeights and Fletching, and
+	// between LumbridgeGuide and WornWeights; Shopkeepers
+	// (phase 41, no members flag) loads between SeekingArrows
+	// and WildernessDitch; WildernessDitch (phase 40, no
+	// members flag) loads between Shopkeepers and WornWeights;
+	// Fletching (members: true, phase 34) loads between
+	// WornWeights and Woodcutting; Fishing (phase 35, no members
+	// flag — F2P) loads between WornWeights and Fletching, and
 	// Woodcutting (phase 32, no members flag) loads before
 	// Cooking (phase 36, no members flag — F2P), which loads
 	// last. AdminCommands (phase 38, no members flag) loads
@@ -61,7 +62,7 @@ func TestNewPluginHubLoadsMembersContentOnMembersWorld(t *testing.T) {
 		t.Fatalf("newPluginHub: %v", err)
 	}
 	loaded := hub.Loaded()
-	want := []string{"AdminCommands", "DateMinutes", "GracefulOutfit", "LumbridgeGuide", "SeekingArrows", "WildernessDitch", "WornWeights", "Fishing", "Fletching", "Woodcutting", "Cooking"}
+	want := []string{"AdminCommands", "DateMinutes", "GracefulOutfit", "LumbridgeGuide", "SeekingArrows", "Shopkeepers", "WildernessDitch", "WornWeights", "Fishing", "Fletching", "Woodcutting", "Cooking"}
 	if len(loaded) != len(want) {
 		t.Fatalf("Loaded() = %v, want %v", loaded, want)
 	}
@@ -75,18 +76,18 @@ func TestNewPluginHubLoadsMembersContentOnMembersWorld(t *testing.T) {
 func TestNewPluginHubSwitchDisablesDateMinutes(t *testing.T) {
 	// A world.json switch turning DateMinutes off keeps it out of
 	// the loaded set, and the hub logs it as disabled. AdminCommands,
-	// WildernessDitch, WornWeights, LumbridgeGuide, Woodcutting, Fishing and Cooking (no
-	// switches) still load (AdminCommands first; WildernessDitch
-	// between LumbridgeGuide and WornWeights; Fishing between
-	// WornWeights and Woodcutting; Cooking last);
-	// GracefulOutfit stays gated out of the free world.
+	// LumbridgeGuide, Shopkeepers, WildernessDitch, WornWeights,
+	// Woodcutting, Fishing and Cooking (no switches) still load
+	// (AdminCommands first; Shopkeepers between LumbridgeGuide and
+	// WildernessDitch; Fishing between WornWeights and Woodcutting;
+	// Cooking last); GracefulOutfit stays gated out of the free world.
 	var buf bytes.Buffer
 	hub, err := newPluginHub(&config.World{Plugins: map[string]bool{"DateMinutes": false}}, log.New(&buf, "", 0), nil)
 	if err != nil {
 		t.Fatalf("newPluginHub: %v", err)
 	}
-	if loaded := hub.Loaded(); len(loaded) != 7 || loaded[0] != "AdminCommands" || loaded[1] != "LumbridgeGuide" || loaded[2] != "WildernessDitch" || loaded[3] != "WornWeights" || loaded[4] != "Fishing" || loaded[5] != "Woodcutting" || loaded[6] != "Cooking" {
-		t.Fatalf("Loaded() = %v, want [AdminCommands LumbridgeGuide WildernessDitch WornWeights Fishing Woodcutting Cooking]", loaded)
+	if loaded := hub.Loaded(); len(loaded) != 8 || loaded[0] != "AdminCommands" || loaded[1] != "LumbridgeGuide" || loaded[2] != "Shopkeepers" || loaded[3] != "WildernessDitch" || loaded[4] != "WornWeights" || loaded[5] != "Fishing" || loaded[6] != "Woodcutting" || loaded[7] != "Cooking" {
+		t.Fatalf("Loaded() = %v, want [AdminCommands LumbridgeGuide Shopkeepers WildernessDitch WornWeights Fishing Woodcutting Cooking]", loaded)
 	}
 	if !strings.Contains(buf.String(), "disabled=") {
 		t.Errorf("hub log %q does not report the disabled plugin", buf.String())

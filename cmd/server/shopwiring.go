@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"tsps-go/internal/cache"
+	"tsps-go/internal/content/shopkeepers"
 	"tsps-go/internal/definition"
 	"tsps-go/internal/game"
 	"tsps-go/internal/listeners"
@@ -580,6 +581,11 @@ var _ plugins.ShopDefinition = shopDefinitionAdapter{}
 func (a shopDefinitionAdapter) ID() int          { return a.def.ID }
 func (a shopDefinitionAdapter) Name() string     { return a.def.Name }
 func (a shopDefinitionAdapter) Currency() string { return a.def.Currency }
+
+// NpcInteractions is empty: game.ShopDefinition carries no
+// trader rows (they live on the loaded definition, exposed by
+// definitionShopAdapter below).
+func (a shopDefinitionAdapter) NpcInteractions() []plugins.ShopNpcInteraction { return nil }
 func (a shopDefinitionAdapter) OriginalStock() []plugins.ShopStockEntry {
 	stock := make([]plugins.ShopStockEntry, len(a.def.OriginalStock))
 	for i, row := range a.def.OriginalStock {
@@ -622,6 +628,14 @@ func (a definitionShopAdapter) DefaultRestockTicks() int  { return a.def.Default
 func (a definitionShopAdapter) DefaultDestockTicks() int  { return a.def.DefaultDestockTicks() }
 func (a definitionShopAdapter) SoldItemDestockTicks() int { return a.def.SoldItemDestockTicks() }
 func (a definitionShopAdapter) Source() string            { return a.def.Source() }
+func (a definitionShopAdapter) NpcInteractions() []plugins.ShopNpcInteraction {
+	traders := a.def.NpcInteractions()
+	out := make([]plugins.ShopNpcInteraction, len(traders))
+	for i, trader := range traders {
+		out[i] = plugins.ShopNpcInteraction{NPCIDs: append([]int(nil), trader.NPCIDs...), OptionSlot: trader.OptionSlot}
+	}
+	return out
+}
 func (a definitionShopAdapter) SalesPolicy() plugins.ShopSalesPolicy {
 	p := a.def.SalesPolicy()
 	return plugins.ShopSalesPolicy{
@@ -694,6 +708,45 @@ func installShopHubSurfaces(hub *plugins.Hub, manager *game.ShopManager, store *
 		hub.SetShopDefinitionRegistry(shopDefinitionRegistryAdapter{store: store})
 	}
 	hub.SetTradeStateReader(tradeStateReader)
+}
+
+// installShopkeepers installs the Shopkeepers plugin's NPC
+// bindings (see internal/content/shopkeepers): the shops.json
+// trader rows split into defaults and customs (Store
+// .IsCustomShop), with the cache's NPC action labels for the
+// any-hook. It runs after installShopHubSurfaces — the handlers
+// resolve Core.ShopManager lazily, but the surface must exist
+// by the first click — and after loadGameDefinitions, when the
+// shop data and the cache facades both exist. A nil hub, store,
+// or defs installs nothing (a NoCache boot has no NPC actions
+// to label with). The bound count is logged for the boot
+// record: 669 distinct trader keys in the shipped data (see
+// PHASE41_PLAN.md).
+func installShopkeepers(hub *plugins.Hub, store *definition.Store, defs *cache.CacheDefinitions, logger *log.Logger) {
+	if hub == nil || store == nil || defs == nil {
+		return
+	}
+	if logger == nil {
+		logger = log.Default()
+	}
+	var defaults, customs []plugins.ShopDefinition
+	for _, def := range store.Shops() {
+		adapted := definitionShopAdapter{def: def}
+		if store.IsCustomShop(def.ID()) {
+			customs = append(customs, adapted)
+		} else {
+			defaults = append(defaults, adapted)
+		}
+	}
+	npcActions := func(npcID int) []string {
+		npc := defs.GetNpc(npcID)
+		if npc == nil {
+			return nil
+		}
+		return npc.Actions
+	}
+	bound := shopkeepers.InstallBindings(hub, defaults, customs, npcActions)
+	logger.Printf("[shopkeepers] installed %d shopkeeper bindings (%d default shops, %d custom shops)", bound, len(defaults), len(customs))
 }
 
 // shopOpener implements game.ShopOpener over the ShopManager

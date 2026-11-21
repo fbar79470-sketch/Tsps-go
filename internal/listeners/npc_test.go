@@ -90,7 +90,14 @@ func adjacentNpcClick() protocol.NpcOption {
 }
 
 func adjacentNpc() *game.NPC {
-	return game.NewNPC(100, game.Location{X: 3090, Y: 3524, Z: 0})
+	// A live NPC: the spawn path gives every world NPC
+	// hitpoints above 0 (DefaultNPCHitpoints 10), so a
+	// fixture NPC that must reach arrival carries 10 — the
+	// arrival closure treats 0 or below as dead/dying
+	// (MovementQueue.ts:1696-1704).
+	npc := game.NewNPC(100, game.Location{X: 3090, Y: 3524, Z: 0})
+	npc.Hitpoints = 10
+	return npc
 }
 
 // drivePlayer runs player ticks until done reports true or the
@@ -343,6 +350,7 @@ func TestNpcActionTalkToArrival(t *testing.T) {
 func TestNpcActionWalkToDistantNpc(t *testing.T) {
 	p := testPlayer()
 	npc := game.NewNPC(100, game.Location{X: 3095, Y: 3524, Z: 0})
+	npc.Hitpoints = 10 // live NPC (see adjacentNpc)
 	started := false
 	hooks := NpcHooks{StartDialogue: func(req *NpcDialogueRequest) bool { started = true; return true }}
 	deps := npcTestDeps(npc, talkToDef(), hooks)
@@ -488,6 +496,64 @@ func TestNpcActionArrivalRecheck(t *testing.T) {
 	}
 	if started {
 		t.Fatal("a departed NPC must not start a dialogue")
+	}
+	if len(session.gameMessages) != 0 {
+		t.Fatalf("messages = %q, want none", session.gameMessages)
+	}
+}
+
+func TestNpcActionArrivalWanderingNpcStillInteracts(t *testing.T) {
+	// A wandering NPC that steps off its clicked tile mid-walk
+	// still gets its interaction (MovementQueue.ts:1525:
+	// targetValid checks registration, life, plane, and type —
+	// never the tile). Phase 41 live-found: Trade on Shop
+	// keeper 2821 never opened the shop because the arrival
+	// closure compared tiles.
+	p := testPlayer()
+	session := &capturingSession{}
+	p.Session = session
+	npc := adjacentNpc()
+	npc.Hitpoints = 10
+	started := false
+	deps := npcTestDeps(npc, talkToDef(), NpcHooks{
+		StartDialogue: func(req *NpcDialogueRequest) bool { started = true; return true },
+	})
+	if got := routeNpcOutcome(p, adjacentNpcClick(), 1, deps); !got.Implemented {
+		t.Fatalf("route = %+v, want acted", got)
+	}
+	// The NPC wanders one tile north before the player arrives.
+	npc.SetLocation(game.Location{X: 3090, Y: 3525, Z: 0})
+	drivePlayer(t, p, func() bool { return started }, 10)
+	if !started {
+		t.Fatal("a wandering NPC must still start its dialogue")
+	}
+	if len(session.gameMessages) != 0 {
+		t.Fatalf("messages = %q, want none", session.gameMessages)
+	}
+}
+
+func TestNpcActionArrivalTransformedNpcDrops(t *testing.T) {
+	// An NPC that changes type mid-walk (a sheep sheared by
+	// someone else) is no longer what was clicked: the
+	// interaction drops silently (MovementQueue.ts:1521-1525).
+	p := testPlayer()
+	session := &capturingSession{}
+	p.Session = session
+	npc := adjacentNpc()
+	npc.Hitpoints = 10
+	started := false
+	deps := npcTestDeps(npc, talkToDef(), NpcHooks{
+		StartDialogue: func(req *NpcDialogueRequest) bool { started = true; return true },
+	})
+	if got := routeNpcOutcome(p, adjacentNpcClick(), 1, deps); !got.Implemented {
+		t.Fatalf("route = %+v, want acted", got)
+	}
+	npc.SetNpcTransformationID(200)
+	for cycle := int64(2); cycle < 8; cycle++ {
+		p.Process(cycle)
+	}
+	if started {
+		t.Fatal("a transformed NPC must not start a dialogue")
 	}
 	if len(session.gameMessages) != 0 {
 		t.Fatalf("messages = %q, want none", session.gameMessages)

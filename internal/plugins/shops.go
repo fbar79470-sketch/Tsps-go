@@ -511,6 +511,17 @@ type ShopSalesPolicy struct {
 	ChangePer    *int
 }
 
+// ShopNpcInteraction is one npcInteractions trader row of a shop
+// definition: the NPC ids whose option at optionSlot opens this
+// shop (Shopkeepers.plugin.js traderKeys). The definition loader
+// applies the traderKeys validity rules at load (slot 1-5, npc
+// ids >= 0), so the rows a ShopDefinition reports are exactly the
+// keys the Shopkeepers plugin binds.
+type ShopNpcInteraction struct {
+	NPCIDs     []int
+	OptionSlot int
+}
+
 // ShopDefinition is the minimal shop-definition surface content
 // reads: the ShopDefinition accessors (ShopDefinition.ts:64-101)
 // that plugin code demonstrably calls — getId/getName (shop
@@ -548,6 +559,10 @@ type ShopDefinition interface {
 	// SalesPolicy is the shop's pricing policy
 	// (getSalesPolicy).
 	SalesPolicy() ShopSalesPolicy
+	// NpcInteractions is the shop's trader rows: the (npcId,
+	// optionSlot) bindings that open this shop
+	// (Shopkeepers.plugin.js traderKeys).
+	NpcInteractions() []ShopNpcInteraction
 }
 
 // ShopDefinitionRegistry is the Go-idiomatic equivalent of the

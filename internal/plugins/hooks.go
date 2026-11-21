@@ -8,7 +8,7 @@
 // The PluginApi interface (PluginTypes.ts:999-1559) declares 108 distinct
 // hook families (on* methods; four have two overloads each and count once:
 // onObjectInteraction, onItemOnObject, onItemOnItem,
-// onItemAction). Fifty-seven get a registration method: the six lifecycle
+// onItemAction). Fifty-eight get a registration method: the six lifecycle
 // families below (Hub.Emit* methods in this file; the coordinator wires
 // the production call sites) plus onCustomEvent (events.go), onCommand
 // (api.go; fired by the command registry through Hub.EmitCommandHooks,
@@ -27,7 +27,9 @@
 // by the NPC-option listener through the cmd/server adapter),
 // plus the onNpcInteraction family in the same file (fired by
 // the same emit, after the click bindings — see
-// npcinteraction.go),
+// npcinteraction.go), plus the onAnyNpcInteraction family in
+// the same file (phase 41: fired by the same emit, last, after
+// the name hooks — see npcinteraction.go),
 // the two dialogue
 // families in dialogue.go (onNpcDialogueVariant,
 // onNpcDialogueCondition; fired by the transcript playback
@@ -134,7 +136,7 @@
 // routing to the hub beyond the attack option and the click
 // family: `onNpcRoute`,
 // `onBeforeNpcInteraction`, `onNpcsInteraction`,
-// `onAnyNpcInteraction`, `onNpcFirstClick`,
+// `onNpcFirstClick`,
 // `onNpcSecondClick`, `onNpcThirdClick`, `onNpcFourthClick`,
 // `onItemOnNpc`, `onSpellOnNpc`. (`onNpcAttackOption` is ported in
 // combat.go: it gates the NPC attack click in the NPC-option
@@ -143,7 +145,9 @@
 // the NPC-option listener calls through the cmd/server adapter.
 // `onNpcInteraction` is ported in npcinteraction.go since Phase
 // 35: the same emit runs the name-based hooks after the click
-// bindings.)
+// bindings. `onAnyNpcInteraction` is ported in npcinteraction.go
+// since Phase 41: the same emit runs the generic list last, after
+// the name hooks — TS order, `PluginManager.ts:1246-1263`.)
 //
 // World entities & sailing — (onWorldEntityInteraction is
 // ported in sailing.go, fired by the world-entity listener
@@ -286,8 +290,10 @@
 // wait for — the hub itself is the registry), and
 // emitNpcInteraction as Api.EmitNpcInteraction in
 // npcinteraction.go (Phase 33, delegating to
-// Hub.EmitNpcInteraction) — the other 65 have no Go
-// equivalent yet):
+// Hub.EmitNpcInteraction), and onAnyNpcInteraction as
+// Api.OnAnyNpcInteraction in npcinteraction.go (Phase 41, the
+// generic list Hub.EmitNpcInteraction runs last) — the other
+// 64 have no Go equivalent yet):
 //
 // Engine accessors & logging — no Core surface beyond the scoped Core in
 // core.go; the systems are missing or adapter-owned: `getWorld`,
@@ -505,7 +511,14 @@ type hookRegistry struct {
 	// list, in registration order; each entry carries the NPC
 	// definition name and its option-text-keyed actions, and
 	// the emit snapshots the matching names only.
-	npcInteraction         []npcInteractionHook
+	npcInteraction []npcInteractionHook
+	// Any-NPC-interaction hooks (see npcinteraction.go): one
+	// list, in registration order; each entry carries its
+	// option-text-keyed actions, and the emit runs every entry
+	// whose map holds the clicked option text — the generic
+	// list TS runs last in emitNpcInteraction
+	// (PluginManager.ts:1246-1263).
+	anyNpcInteraction      []anyNpcInteractionHook
 	playerAttack           []hookEntry[*PlayerAttackEvent]
 	playerDeath            []hookEntry[*PlayerDeathEvent]
 	playerDeathItemDrop    []hookEntry[*PlayerDeathItemDropEvent]

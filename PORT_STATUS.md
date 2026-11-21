@@ -8,30 +8,65 @@ findings) lives outside this repository; status values below mean:
 ported, gaps listed), **NOT STARTED** (absent — nothing here
 pretends otherwise).
 
-Last updated: 2026-11-21 (phase 37 run: RSProx gateway
-endpoints — `GatewayTarget`, approved by Tyler
-2026-11-20. Two static endpoints on the game port:
-`GET /gateway/jav_config.ws` (30 lines, byte-exact vs
-TS, param=25 = cache revision, host from `PUBLIC_HOST`
-or 127.0.0.1) and `GET /gateway/worldlist.ws`
-(one-world binary list, members flag from the world
-definition) — both live-verified against the real
-rev-242 cache, members and non-members, with and
-without `PUBLIC_HOST`. The external runelite-gateway
-process itself was NOT run (out of scope). Hub counts
-unchanged (57 of 108 families firable, 61 registration
-methods — 4 named overloads). 4,664 tests passing.
-Quests are postponed per Tyler's 2026-11-16
-instruction (Doric's Quest picked but deferred); Tyler
-decided 2026-11-17: combat leftovers first, then adding
-all skills — see "Next modules".)
+Last updated: 2026-11-21 (phase 41 run: Shopkeepers plugin —
+`onAnyNpcInteraction` becomes firable, 58 of 108 families, 62
+registration methods — 4 named overloads; shops open by NPC
+click with the Phase 39 data, live-verified in 5 smoke legs,
+32 checks, 0 failures. 4,713 tests passing. Quests are
+postponed per Tyler's 2026-11-16 instruction (Doric's Quest
+picked but deferred); Tyler decided 2026-11-17: combat
+leftovers first, then adding all skills — see "Next modules".)
 
 ## What was verified in this run
 
-- Phase 40 (`go build ./...`, `go vet ./...`, `gofmt -l .`:
-  clean. `CGO_ENABLED=0 go build ./...`: clean. 768 `.go`
-  files, 23 packages (new `internal/content/wildernessditch`,
-  `internal/game/forcemovement.go`).
+- Phase 41 (`go build ./...`, `go vet ./...`, `gofmt -l .`:
+  clean. `CGO_ENABLED=0 go build ./...`: clean. 772 `.go`
+  files, 24 packages (new `internal/content/shopkeepers`).
+- Phase 41 `go test ./... -p 1 -count=1 -v`: all 24 packages
+  pass (4,713 passing test cases: 3,565 top-level + 1,148
+  subtests, 0 failures, 0 skips — 4,696 from phase 40 + 17
+  new: 10 shopkeepers (bindings, currencies, point-currency
+  clamps, install/open/shared/Default/custom), 2 listener
+  arrival-path (wandering-NPC still interacts, transformed
+  NPC drops), 5 definition/shop wiring (npcInteractions
+  parsing, custom-shop origin); the temporary phase-41
+  probe test was deleted after use).
+- Phase 41 `go test -race ./...`: no data race anywhere; the
+  first full run failed only on the known pre-existing
+  `TestEngineTicksAtRate` timing flake in `internal/game`
+  (TickCount 3 over ~60 ms at the 5 ms rate — the documented
+  flake under race slowness, tolerance never changed), and a
+  re-run of `internal/game` with `-race` passed clean; the
+  other 23 packages passed on the first run. The
+  phase-37-suspect `combatant.go` `SetCombatCycleSource`
+  race still does not reproduce.
+- Live phase-41 smoke tests (throwaway harness in
+  `/home/hatch/smoke41/`, five modes driving a real
+  WebSocket client against the real server binary + real
+  rev-242 cache from a temp root outside the repo; legs run
+  singly, 32 checks, 0 failures): shop-open PASS 7/7
+  (Trade on Shop keeper 2821 → shop 1102 Edgeville General
+  Store on the wire, id/title/currency 995, the 14 file
+  stock rows in order), shop-buy PASS 7/7 (1 pot 1931 for
+  1 coin; coins 1000→999, pot in inventory, re-open shows
+  stock 5→4), shop-sell PASS 7/7 (pot sold for sellPrice 0;
+  pot gone, coins 1000, re-open shows stock 5→6),
+  shop-shared PASS 3/3 (Trade on Raum Urda-Stein 1943 → NO
+  shop opens — shared trader, no subscriber, no Default
+  version — and the player walks to the NPC), shop-tokkul
+  PASS 8/8 (Trade on TzHaar-Hur-Lek 2184 → Default shop
+  1468, 16 file rows, currency item -1 as TS sends it;
+  bought 1 copper ore 438 for 4 Tokkul, 100→96). Two
+  live-found bugs fixed in-phase: the NPC-arrival closure
+  dropped interactions when a wandering NPC stepped off
+  its click-time tile (TS validates identity/HP/plane
+  only, `MovementQueue.ts:1696-1704`); `tradeVersion`
+  picked only a subscriber's shop and never fell back to
+  the ` (Default)` version (TS picks it itself,
+  `Shopkeepers.plugin.js:155-171`). Arrival finding: the
+  TzHaar gem-store NPC cannot be routed to from 3 tiles
+  south (2464,5152) — the counter/wall blocks the route —
+  so the tokkul leg seeds adjacent (2464,5150).
 - Phase 40 `go test ./... -p 1 -count=1 -v`: all 23 packages
   pass (4,696 passing test cases: 3,548 top-level + 1,148
   subtests, 0 failures, 0 skips — 4,678 from phase 39 + 18
@@ -631,8 +666,8 @@ all skills — see "Next modules".)
 | P2 | HTTP extras: `ContentApi`, `GatewayTarget`, `/regions` routes | `internal/session` (`gateway.go`), `cmd/server` (wiring) | PARTIAL (phase 37: `GatewayTarget` DONE — `GET /gateway/jav_config.ws` byte-exact vs TS (30 lines, `param=25` = cache revision, host from `PUBLIC_HOST` or 127.0.0.1, warn-once on invalid host) + `GET /gateway/worldlist.ws` one-world binary (members flag from the world definition, type flags 0 / activity `tsps` — the Go world definition carries no world-type source, which is the TS default), both live-verified against the real rev-242 cache incl. members/non-members and `PUBLIC_HOST`; `ContentApi` (`/api/*`) and the `/regions` routes still NOT STARTED — handler 404s them) |
 | P2 | Interface runtime: `Player` interface id, `PacketSender` interface mounts, `InterfaceLayoutRegistry`, `InterfaceActionClickOpcode`, entered-amount/syntax prompts, the live varp/varbit store | `internal/game` (interface id + close gate, entered actions), `internal/session` (mount tracking + sender surface, varp store), `internal/definition` (layout open dispatch), `internal/listeners` (action dispatch, prompt answers, close case), `internal/plugins` (interface families), `cmd/server` (wiring) | DONE (phase 18, live-verified: interface open/close/layering + close-on-movement/logout/death + layout open dispatch on all 7 surfaces + action dispatch to hub hooks with prompt-first order + entered-amount/syntax prompts + varp/varbit store with change detection, varbit packing, and replay; session-only, nothing persists; `VarManager` transform plumbing, `registerCustomInterface`, bank interface flows, and the per-player vars seam are gaps — see notes) |
 | P2 | Clans/social: `PlayerRelations`, social-packet dispatch, friends-chat-snapshot + clan encoders | `internal/game` (relations, names, chat gate), `internal/protocol` (social decoders/encoders), `internal/session` (social senders), `internal/listeners` (social dispatch), `internal/persist` (relations ownership), `internal/plugins` (social-packet variants), `cmd/server` (wiring) | DONE (phase 19, live-verified: whole `PlayerRelations` port + live chat gate + all 8 social-packet kinds emitted to the hub + snapshot/clan encoders + relations owned save state + logout presence-offline; friends-chat channels + the clan system are plugin content (FriendsList/Clans, NOT ported — the engine unlocks them); the legacy friend/ignore presence sends are no-ops, exactly as in TS (`PlayerSession.write` is a no-op upstream) — live presence comes from the snapshot, which content sends; chat modes session-only — see notes) |
-| P3 | Plugin hub: `PluginManager`, `PluginTypes` | `internal/plugins` + `cmd/server` (`pluginwiring.go`) | DONE (compile-time registry, dependency-ordered loading, config-declaration validation, world.json switches, members-gating, lifecycle + custom-event + command/social-packet + object-interaction + dialogue + zone + combat + shop/trade + interface + skills + world-entity-interaction hooks with per-hook error isolation, gate contracts, scoped core surface, login extensions; the social-packet family fires all 8 kinds since phase 19 (same family, not a new one — the count is unchanged); onCanAttack became firable in phase 26; onSpellDisabled + onSpellRuneBypass became firable in phase 27; onShouldDropItemsOnDeath + onShouldKeepItemOnDeath + onPlayerDefeated + onPlayerDeathItemDrop + onPlayerDeathDrops became firable in phase 28 (51 of 108); the onItemAction family became firable in phase 32 (onItemAction/onItemActionNamed/onItemFirstAction/onCanUseItem, 54 of 108); the onNpcClick family became firable in phase 33 (onNpcClick, with the NPC remains-delay + transform seams in the death flow) and the onItemOnItem family became firable in phase 33 (onItemOnItem/onItemOnItemNamed, riding INVENTORY_USE_ON kind 4 — there is no separate item-on-item opcode), and the onNpcInteraction family became firable in phase 35 (onNpcInteraction, name hooks after the onNpcClick bindings — TS order, `NPCOptionPacketListener.ts:122/:132` — with the `DefinitionName`/`Action`/`Actions` fields on the hub event; `OnNpcsInteraction`/`OnAnyNpcInteraction`/`OnBeforeNpcInteraction`/`OnNpcRoute` stay table-only), 57 of 108; 51 of 108 hook families have no registration method yet — documented in the unfired-family table with the missing system named — and 29 of 95 non-hook members are ported, and 12 of 191 Core members — see notes; hub-count correction in phase 31: earlier versions of this document said 53/108, counting registration *methods* as *families* — Go has 61 `Api.On*` methods but four are named overloads of already-counted families (`OnObjectInteractionNamed`, `OnItemOnObjectNamed`, `OnItemActionNamed`, `OnItemOnItemNamed`), so 57 distinct families are firable (61 methods) and 51 are table-only; `hooks.go`'s header says fifty-seven (updated in phase 35; the phase-35 plan's "5 named overloads" was wrong — recount: exactly 4 `*Named` methods) |
-| P3 | All `plugins/` content (2,907 JS files, 789,355 lines) | Go packages under `internal/content/` | PARTIAL (11 of 577 entries ported: DateMinutes (phase 10), GracefulOutfit + WornWeights (phase 22), LumbridgeGuide (phase 23), SeekingArrows (phase 24), Woodcutting (phases 32–33 — core loop + all sub-units except the Guild, which needs Tyler's `woodcutting-guild.json` import approval), Fletching (phase 34 — full skill: Shared loop, Recipes, Spool, Diaries, CreationMenu seam, all live-verified), Fishing (phase 35 — core loop + 8 of 10 sub-units, MinnowPlatform / Gita exchange / Guild door deferred, live-verified in 4 modes), Cooking (phase 36 — full skill: Cookers, Recipes, Wine, Churn, SacredEel, LeapingFish, Gnome, live-verified on fire/range/wine legs), AdminCommands (phase 38 — `::item` only, the first registered command, live-verified: admin spawn + denial path), WildernessDitch (phase 40 — `Cross` on object 23271 with the ForceMovement glide + click delay, live-verified: south/north/turn crossings + the wall leg), all live-verified; the rest per `CONTENT_MIGRATION_PLAN.md`, piece by piece with Tyler's direction; no wholesale port) |
+| P3 | Plugin hub: `PluginManager`, `PluginTypes` | `internal/plugins` + `cmd/server` (`pluginwiring.go`) | DONE (compile-time registry, dependency-ordered loading, config-declaration validation, world.json switches, members-gating, lifecycle + custom-event + command/social-packet + object-interaction + dialogue + zone + combat + shop/trade + interface + skills + world-entity-interaction hooks with per-hook error isolation, gate contracts, scoped core surface, login extensions; the social-packet family fires all 8 kinds since phase 19 (same family, not a new one — the count is unchanged); onCanAttack became firable in phase 26; onSpellDisabled + onSpellRuneBypass became firable in phase 27; onShouldDropItemsOnDeath + onShouldKeepItemOnDeath + onPlayerDefeated + onPlayerDeathItemDrop + onPlayerDeathDrops became firable in phase 28 (51 of 108); the onItemAction family became firable in phase 32 (onItemAction/onItemActionNamed/onItemFirstAction/onCanUseItem, 54 of 108); the onNpcClick family became firable in phase 33 (onNpcClick, with the NPC remains-delay + transform seams in the death flow) and the onItemOnItem family became firable in phase 33 (onItemOnItem/onItemOnItemNamed, riding INVENTORY_USE_ON kind 4 — there is no separate item-on-item opcode), and the onNpcInteraction family became firable in phase 35 (onNpcInteraction, name hooks after the onNpcClick bindings — TS order, `NPCOptionPacketListener.ts:122/:132` — with the `DefinitionName`/`Action`/`Actions` fields on the hub event; `OnNpcsInteraction`/`OnBeforeNpcInteraction`/`OnNpcRoute` stay table-only), and the onAnyNpcInteraction family became firable in phase 41 (onAnyNpcInteraction, the generic list last after the name hooks — TS order, `PluginManager.ts:1246-1263` — with `Hub.AddNpcClickHook`/`Hub.AddAnyNpcInteractionHook` engine installs that bypass the load seal so Shopkeepers bindings can be installed post-Load; `OnNpcsInteraction`/`OnBeforeNpcInteraction`/`OnNpcRoute` stay table-only), 58 of 108; 50 of 108 hook families have no registration method yet — documented in the unfired-family table with the missing system named — and 29 of 95 non-hook members are ported, and 12 of 191 Core members — see notes; hub-count correction in phase 31: earlier versions of this document said 53/108, counting registration *methods* as *families* — Go has 62 `Api.On*` methods but four are named overloads of already-counted families (`OnObjectInteractionNamed`, `OnItemOnObjectNamed`, `OnItemActionNamed`, `OnItemOnItemNamed`), so 58 distinct families are firable (62 methods) and 50 are table-only; `hooks.go`'s header says fifty-eight (updated in phase 41; the phase-35 plan's "5 named overloads" was wrong — recount: exactly 4 `*Named` methods) |
+| P3 | All `plugins/` content (2,907 JS files, 789,355 lines) | Go packages under `internal/content/` | PARTIAL (12 of 577 entries ported: DateMinutes (phase 10), GracefulOutfit + WornWeights (phase 22), LumbridgeGuide (phase 23), SeekingArrows (phase 24), Woodcutting (phases 32–33 — core loop + all sub-units except the Guild, which needs Tyler's `woodcutting-guild.json` import approval), Fletching (phase 34 — full skill: Shared loop, Recipes, Spool, Diaries, CreationMenu seam, all live-verified), Fishing (phase 35 — core loop + 8 of 10 sub-units, MinnowPlatform / Gita exchange / Guild door deferred, live-verified in 4 modes), Cooking (phase 36 — full skill: Cookers, Recipes, Wine, Churn, SacredEel, LeapingFish, Gnome, live-verified on fire/range/wine legs), AdminCommands (phase 38 — `::item` only, the first registered command, live-verified: admin spawn + denial path), WildernessDitch (phase 40 — `Cross` on object 23271 with the ForceMovement glide + click delay, live-verified: south/north/turn crossings + the wall leg), Shopkeepers (phase 41 — `shops.json` npcInteractions bindings via onAnyNpcInteraction + 19 item / 13 point currencies, live-verified: shop-open/buy/sell/shared/tokkul legs, 32 checks), all live-verified; the rest per `CONTENT_MIGRATION_PLAN.md`, piece by piece with Tyler's direction; no wholesale port) |
 | P3 | Bots: `plugins/bots/` + bot runtime | undecided | NOT STARTED |
 | P3 | WebRTC transport | undecided | NOT STARTED |
 | P3 | Browser host: `BrowserHostHttpBridge`, IndexedDB persistence | undecided | NOT STARTED |
@@ -2264,7 +2299,7 @@ provides:
   whole-list `disabledPlugins` form is not honored (the
   config package does not carry it; the hub supports it via
   `ParseDisabledPlugins`).
-- Hook registry + emit: typed registrations for the 45
+- Hook registry + emit: typed registrations for the 58
   families the Go engine can fire (server startup/shutdown,
   player login/logout/disconnect/process, command,
   social-packet, custom events, the object families:
@@ -2286,7 +2321,7 @@ provides:
   with the TS message shape and isolated, never fatal).
   Lifecycle emits carry the TS emit guards (login/logout/
   disconnect require a non-nil player + non-empty username).
-  The other 63 `on*` families are enumerated in the
+  The other 50 `on*` families are enumerated in the
   `hooks.go` table with the missing engine system named for
   each — no registration method exists for them yet, and
   none is silently dropped — along with the 95 non-hook
@@ -3729,22 +3764,15 @@ pick is Tyler's. Verification counts are unchanged from phase 24
     ~tick 55 / ~33 s, last Lumbridge entry ~tick 134 /
     ~80 s). Boot cost itself is negligible: 2.85 s → 3.09 s
     to the started line (+0.24 s). (d) No shop opens by NPC
-    click: the Shopkeepers plugin (231 lines,
-    `plugins/npcs/Shopkeepers.plugin.js`) is NOT STARTED —
-    it is the TS piece that reads `shops.json`
-    `npcInteractions` (+ `custom-shops.json` bindings) and
-    registers `NpcInteractionDefinition`s with
-    `core.shops.open` actions. The Go loader ignores
-    `npcInteractions`, `loadInteractions` has zero
-    contributed sources (`Store.Interaction()` is always
-    empty), and no shipped dialogue opens a shop (the
-    `open_shop` transcript step exists but zero dialogue
-    rows use it). The ShopManager holds all 487 shops with
-    stock (load-proven), but there is no client-reachable
-    trigger to open one — including the General Store (shop
-    0), whose own `npcInteractions` is empty in the file.
-    Porting Shopkeepers is the fix; it is content work,
-    not a data import. (e) Forester cache name: NPC
+    click: RESOLVED (phase 41) — the Shopkeepers plugin is
+    ported (`internal/content/shopkeepers/`;
+    `onAnyNpcInteraction` firable; 669 bindings installed
+    at boot; 19 item + 13 point currencies registered) and
+    shops open, buy, and sell live (see "What was verified").
+    The Go loader parses `npcInteractions` now, and the
+    ShopManager's 487 shops have a client-reachable trigger
+    — including the General Store (shop 0), whose own
+    `npcInteractions` is empty in the file. (e) Forester cache name: NPC
     12119's rev-242 cache name is literally `"null"`; the
     spawn file carries "Friendly Forester" and the spawn
     uses the file name. TS reads the same cache, so parity
@@ -3820,6 +3848,56 @@ pick is Tyler's. Verification counts are unchanged from phase 24
     once, only via `Stop()`, never when a task finishes by
     returning done) — only ForceMovementTask uses it so
     far.
+
+24. Phase 41 residual gaps (Shopkeepers; all documented at
+    the port sites, none silent): (a) General
+    `registerNpcInteraction` (definition contributions incl.
+    teleport/dialogue actions, priority-100 loader sources)
+    stays table-only — Shopkeepers uses `Hub.
+    AddNpcClickHook` for its custom bindings instead, which
+    claims the same slots in the same order relative to
+    every other hook. (b) `onBeforeNpcInteraction` and
+    `onNpcsInteraction` stay table-only (the transcript
+    still has NOT moved into the emit, and StartDialogue
+    has NOT narrowed to static bindings only — the NPC
+    click listener still degenerates Talk-to to the
+    dialogue start before the emit). (c) A slot-1 custom
+    binding would reach Go's Talk-to-only StartDialogue
+    before the emit, while TS runs it in `handle()` first;
+    unobservable today (`custom-shops.json` is empty — zero
+    custom bindings in production) and documented in
+    `shopkeepers.go`. (d) `registerPointCurrency`
+    consumers (BountyHunter, LMS, etc.) are NOT ported —
+    the export exists for them; only the 13 generic point
+    currencies the plugin itself registers are live.
+    (e) A shared trader with no subscriber AND no Default
+    version leaves the click unhandled (TS-faithful —
+    `tradeVersion` returns false and nothing claims the
+    click), live-verified on NPC 1943. (f) The shop-open
+    frame's currency item is -1 (65535) for every non-COINS/
+    non-BLOOD_MONEY currency, Tokkul included — TS
+    `currencyItemId` (`ShopManager.ts:1299`) is the same
+    hardcoded switch, so the Go port matches it exactly;
+    the Tokkul payment itself is live-proven (copper ore
+    bought for 4 Tokkul). (g) The two live-found fixes:
+    the NPC-arrival closure now validates identity/HP/
+    plane only (`listeners/npc.go`, grounded in
+    `MovementQueue.ts:1696-1704` — a wandering NPC stepping
+    off its click-time tile no longer drops the
+    interaction; a transform mid-walk still drops it,
+    unit-covered) and `tradeVersion` now falls back to the
+    first name ending ` (Default)` when no subscriber picks
+    a shop (`Shopkeepers.plugin.js:155-171` — the Default
+    fallback lives in tradeVersion itself, not in a
+    subscriber). (h) Live legs (smoke41, real rev-242
+    cache, run singly, 32 checks, 0 failures): shop-open
+    7/7, shop-buy 7/7 (stock 5→4 on re-open), shop-sell
+    7/7 (stock 5→6 on re-open), shop-shared 3/3,
+    shop-tokkul 8/8. Arrival finding: the TzHaar gem-store
+    NPC cannot be routed to from 3 tiles south (2464,5152)
+    — the counter/wall blocks the route — so the tokkul leg
+    seeds adjacent (2464,5150); a routing observation, not
+    a shop bug.
 
 ## Next modules, in priority order
 

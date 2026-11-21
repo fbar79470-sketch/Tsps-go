@@ -290,6 +290,7 @@ type Store struct {
 	layoutList      []*InterfaceLayoutDefinition
 	shops           map[int]*ShopDefinition
 	shopList        []*ShopDefinition
+	customShopIDs   map[int]bool
 	itemOverlays    map[int]*itemOverlay
 	npcOverlays     map[int]*npcOverlay
 	npcExamines     map[int]string
@@ -371,6 +372,7 @@ func Load(dir string, opts LoadOptions) (*Store, error) {
 		layouts:          make(map[string]*InterfaceLayoutDefinition),
 		layoutsByID:      make(map[int][]*InterfaceLayoutDefinition),
 		shops:            make(map[int]*ShopDefinition),
+		customShopIDs:    make(map[int]bool),
 		itemOverlays:     make(map[int]*itemOverlay),
 		npcOverlays:      make(map[int]*npcOverlay),
 		npcExamines:      make(map[int]string),

@@ -13,11 +13,10 @@
 // onBeforeNpcInteraction / onAnyNpcInteraction lists
 // (emitNpcInteraction, PluginManager.ts:1246-1263). Go runs the
 // same order: Hub.EmitNpcInteraction runs the onNpcClick
-// bindings first, then the onNpcInteraction name hooks. Go has
-// no before/any lists (onBeforeNpcInteraction,
-// onNpcsInteraction, onAnyNpcInteraction stay table-only in
-// hooks.go); the name hooks are the "specific" list TS runs
-// between them.
+// bindings first, then the onNpcInteraction name hooks, then the
+// onAnyNpcInteraction generic list (Phase 41). Go has no before
+// list (onBeforeNpcInteraction stays table-only in hooks.go);
+// the name hooks are the "specific" list TS runs between them.
 // The listener calls the one seam (listeners/npc.go
 // npcOperate), after the static-shop step and the dialogue
 // start, which is the TS handle() position for a plugin
@@ -165,6 +164,59 @@ func (r *hookRegistry) snapshotNpcInteraction(name string) []hookEntry[*NpcInter
 	return matched
 }
 
+// anyNpcInteractionHook is one onAnyNpcInteraction registration:
+// the hook entry plus the option-text-keyed actions it covers, in
+// registration order (the Go form of one registerNpcActions(null,
+// actions) hook on PluginManager.npcAnyInteractionHooks,
+// PluginManager.ts:3155-3180, 3509). Unlike the name hooks there
+// is no name to match on: the emit runs every entry and the
+// wrapper looks the clicked option text up in its actions map.
+type anyNpcInteractionHook struct {
+	entry   hookEntry[*NpcInteractionEvent]
+	actions map[string]NpcInteractionHandler
+}
+
+// --- hookRegistry storage for the onAnyNpcInteraction family (see hooks.go) ---
+
+func (r *hookRegistry) addAnyNpcInteraction(e anyNpcInteractionHook) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.anyNpcInteraction = append(r.anyNpcInteraction, e)
+}
+
+func (r *hookRegistry) snapshotAnyNpcInteraction() []hookEntry[*NpcInteractionEvent] {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	matched := make([]hookEntry[*NpcInteractionEvent], 0, len(r.anyNpcInteraction))
+	for _, hook := range r.anyNpcInteraction {
+		matched = append(matched, hook.entry)
+	}
+	return matched
+}
+
+// anyNpcInteractionEntry builds the hook entry for one
+// onAnyNpcInteraction actions map, shared by the Api
+// registration and the Hub engine install: the wrapper mirrors
+// the TS registerNpcActions handler (PluginManager.ts:3170-3179)
+// — a pre-handled event or a click type outside 1-5 never
+// reaches a handler; the handler for the clicked option text
+// (definition.getActions()[clickType-1], carried on the event
+// as Action) runs, and a true return claims the click.
+func anyNpcInteractionEntry(pluginName string, actions map[string]NpcInteractionHandler) hookEntry[*NpcInteractionEvent] {
+	return hookEntry[*NpcInteractionEvent]{pluginName: pluginName, handler: func(event *NpcInteractionEvent) {
+		if event == nil || event.Handled || event.ClickType < 1 || event.ClickType > 5 {
+			return
+		}
+		action, ok := actions[event.Action]
+		if !ok || action == nil {
+			return
+		}
+		if action(event) {
+			event.Handled = true
+		}
+	}}
+}
+
 // OnNpcClick registers an NPC-click hook, mirroring
 // onNpcClick (PluginTypes.ts:1167) and its createApi
 // registration (PluginManager.ts:4042-4044) through
@@ -288,6 +340,138 @@ func (a *Api) OnNpcInteraction(name string, actions map[string]NpcInteractionHan
 	})
 }
 
+// OnAnyNpcInteraction registers a generic NPC-interaction hook,
+// mirroring onAnyNpcInteraction(actions)
+// (PluginTypes.ts:1084-1088; PluginManager.ts:3509) through
+// registerNpcActions(null, actions) (PluginManager.ts:3155-3180):
+// the handler for the clicked option text runs for ANY NPC —
+// there is no name match. The action claims the click by
+// returning true (or setting Handled); false falls through to
+// the next hook. The emit runs the any list last, after the
+// onNpcClick bindings and the onNpcInteraction name hooks, in TS
+// order (PluginManager.ts:1246-1263). Invalid registrations are
+// warned about and dropped, mirroring the TS guards as the Go
+// sibling OnNpcInteraction does: a nil actions map registers
+// nothing, silently; an empty (all-nil) map warns and drops.
+// (TS pushes the hook even for an empty map, where it can never
+// match — observably identical to dropping it.)
+func (a *Api) OnAnyNpcInteraction(actions map[string]NpcInteractionHandler) {
+	if !a.canRegister("onAnyNpcInteraction") {
+		return
+	}
+	if actions == nil {
+		return
+	}
+	valid := make(map[string]NpcInteractionHandler, len(actions))
+	for option, handler := range actions {
+		if handler != nil {
+			valid[option] = handler
+		}
+	}
+	if len(valid) == 0 {
+		if a != nil && a.hub != nil {
+			if logger := a.hub.Logger(); logger != nil {
+				logger.Printf("[plugins] %s attempted invalid any npc interaction hook registration actions=%d", a.name, len(valid))
+			}
+		}
+		return
+	}
+	if len(valid) != len(actions) {
+		if a != nil && a.hub != nil {
+			if logger := a.hub.Logger(); logger != nil {
+				logger.Printf("[plugins] %s any npc interaction hook registration dropped invalid actions (kept %d/%d)", a.name, len(valid), len(actions))
+			}
+		}
+	}
+	a.hub.hooks.addAnyNpcInteraction(anyNpcInteractionHook{
+		entry:   anyNpcInteractionEntry(a.name, valid),
+		actions: valid,
+	})
+}
+
+// AddNpcClickHook installs an onNpcClick hook from engine code,
+// bypassing the load seal: the coordinator installs hooks whose
+// registrations depend on data that loads after hub Load (the
+// Shopkeepers bindings — see internal/content/shopkeepers), the
+// way SubscribeCustomEvent bypasses the seal for engine
+// subscriptions (events.go). Validation mirrors Api.OnNpcClick:
+// no valid ids, a click type outside 1-5, or a nil handler warns
+// (when a logger exists) and drops the registration; invalid ids
+// are dropped and the valid ones kept. A nil Hub or a Hub without
+// a registry is a no-op.
+func (h *Hub) AddNpcClickHook(pluginName string, npcIDs []int, clickType int, handler NpcClickHandler) {
+	if h == nil || h.hooks == nil || handler == nil {
+		return
+	}
+	valid := make([]int, 0, len(npcIDs))
+	for _, id := range npcIDs {
+		if id >= 0 {
+			valid = append(valid, id)
+		}
+	}
+	if len(valid) == 0 || clickType < 1 || clickType > 5 {
+		if logger := h.Logger(); logger != nil {
+			logger.Printf("[plugins] %s attempted invalid npc click hook registration npcIds=%s clickType=%d", pluginName, jsonString(npcIDs), clickType)
+		}
+		return
+	}
+	if len(valid) != len(npcIDs) {
+		if logger := h.Logger(); logger != nil {
+			logger.Printf("[plugins] %s npc click hook registration dropped invalid ids (kept %d/%d): npcIds=%s", pluginName, len(valid), len(npcIDs), jsonString(npcIDs))
+		}
+	}
+	ids := make(map[int]struct{}, len(valid))
+	for _, id := range valid {
+		ids[id] = struct{}{}
+	}
+	h.hooks.addNpcClick(npcClickHook{
+		entry: hookEntry[*NpcInteractionEvent]{pluginName: pluginName, handler: func(event *NpcInteractionEvent) {
+			if event == nil {
+				return
+			}
+			if handler(event) {
+				event.Handled = true
+			}
+		}},
+		npcIDs:    ids,
+		clickType: clickType,
+	})
+}
+
+// AddAnyNpcInteractionHook installs an onAnyNpcInteraction hook
+// from engine code, bypassing the load seal (see AddNpcClickHook):
+// the coordinator installs hooks whose registrations depend on
+// data that loads after hub Load. Validation mirrors
+// Api.OnAnyNpcInteraction: a nil actions map or an empty
+// (all-nil) map warns (when a logger exists) and drops the
+// registration. A nil Hub or a Hub without a registry is a no-op.
+func (h *Hub) AddAnyNpcInteractionHook(pluginName string, actions map[string]NpcInteractionHandler) {
+	if h == nil || h.hooks == nil || actions == nil {
+		return
+	}
+	valid := make(map[string]NpcInteractionHandler, len(actions))
+	for option, handler := range actions {
+		if handler != nil {
+			valid[option] = handler
+		}
+	}
+	if len(valid) == 0 {
+		if logger := h.Logger(); logger != nil {
+			logger.Printf("[plugins] %s attempted invalid any npc interaction hook registration actions=%d", pluginName, len(valid))
+		}
+		return
+	}
+	if len(valid) != len(actions) {
+		if logger := h.Logger(); logger != nil {
+			logger.Printf("[plugins] %s any npc interaction hook registration dropped invalid actions (kept %d/%d)", pluginName, len(valid), len(actions))
+		}
+	}
+	h.hooks.addAnyNpcInteraction(anyNpcInteractionHook{
+		entry:   anyNpcInteractionEntry(pluginName, valid),
+		actions: valid,
+	})
+}
+
 // EmitNpcInteraction runs an NPC click through the
 // registered onNpcClick hooks and reports whether one
 // claimed it, mirroring PluginManager.emitNpcInteraction
@@ -295,12 +479,13 @@ func (a *Api) OnNpcInteraction(name string, actions map[string]NpcInteractionHan
 // "npc_interaction": the entry guards (a nil event, player,
 // or NPC returns false), then the matching click hooks in
 // registration order, breaking once the event is handled.
-// The generic before/main/any lists TS runs in the same
-// emit are NOT ported yet (table-only in hooks.go); when
-// they land they run after the click hooks, as TS runs
-// handle() before emitNpcInteraction. A pre-handled event
-// runs no hooks and returns true, as the TS loop does. A
-// nil Hub or a Hub without a registry returns false.
+// The generic before list TS runs first is NOT ported
+// (table-only in hooks.go); the onNpcInteraction name hooks
+// run next, then the onAnyNpcInteraction generic list last —
+// TS order (before → specific → any), minus the unported
+// before list. A pre-handled event runs no hooks and returns
+// true, as the TS loop does. A nil Hub or a Hub without a
+// registry returns false.
 //
 // The production call site is the NPC-option listener's
 // npcOperate (through the cmd/server adapter);
@@ -318,12 +503,20 @@ func (h *Hub) EmitNpcInteraction(event *NpcInteractionEvent) bool {
 	// The onNpcInteraction name hooks run AFTER the click
 	// bindings (TS: NpcInteractionManager.handle runs before
 	// emitNpcInteraction, and inside the emit the specific
-	// list runs before the any list; Go has no before/any
-	// lists). A name hook matches on the definition name
-	// and the clicked option text; a click already claimed
-	// above never reaches them.
+	// list runs before the any list). A name hook matches on
+	// the definition name and the clicked option text; a click
+	// already claimed above never reaches them.
 	nameHooks := h.hooks.snapshotNpcInteraction(event.DefinitionName)
-	return runHandledGate(h.Logger(), "npc_interaction", nameHooks, event,
+	if runHandledGate(h.Logger(), "npc_interaction", nameHooks, event,
+		func(e *NpcInteractionEvent) bool { return e.Handled }) {
+		return true
+	}
+	// The onAnyNpcInteraction generic list runs LAST (TS:
+	// the any list follows the specific list). An entry
+	// matches on the clicked option text only; a click already
+	// claimed above never reaches it.
+	anyHooks := h.hooks.snapshotAnyNpcInteraction()
+	return runHandledGate(h.Logger(), "npc_interaction", anyHooks, event,
 		func(e *NpcInteractionEvent) bool { return e.Handled })
 }
 

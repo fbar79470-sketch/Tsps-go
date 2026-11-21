@@ -1,8 +1,11 @@
 package plugins
 
-import "testing"
+import (
+	"strings"
+	"testing"
 
-import "tsps-go/internal/game"
+	"tsps-go/internal/game"
+)
 
 // NPC-click tests: the onNpcClick registration, the
 // emitNpcInteraction emit, and the Api passthrough in
@@ -296,5 +299,114 @@ func TestOnNpcInteractionInvalidRegistration(t *testing.T) {
 	}
 	if h.EmitNpcInteraction(&NpcInteractionEvent{Player: player, NPC: npc, NpcID: 1530, ClickType: 1, Location: npc.Location(), DefinitionName: "Fishing spot", Action: "Small Net"}) {
 		t.Error("dropped nil action: want unhandled")
+	}
+}
+
+// Any-NPC-interaction tests: the onAnyNpcInteraction registration
+// and the generic list Hub.EmitNpcInteraction runs last, grounded
+// in PluginManager.ts (registerNpcActions 3155-3180,
+// onAnyNpcInteraction 3509, emitNpcInteraction 1246-1263) and
+// PluginTypes.ts (1084-1088). The Hub.Add* engine installs are
+// covered too: they bypass the load seal for coordinator installs
+// (see SubscribeCustomEvent, events.go).
+
+func TestOnAnyNpcInteractionMatchesAction(t *testing.T) {
+	h, _ := newTestHub()
+	a := newApi(h, "AnyWatch")
+	calls := 0
+	a.OnAnyNpcInteraction(map[string]NpcInteractionHandler{
+		"Trade": func(*NpcInteractionEvent) bool { calls++; return true },
+	})
+	player := testPlayer("alice")
+	npc := game.NewNPC(2821, game.Location{X: 3090, Y: 3519, Z: 0})
+	event := &NpcInteractionEvent{Player: player, NPC: npc, NpcID: 2821, ClickType: 3, Location: npc.Location(), DefinitionName: "Shop keeper", Action: "Trade"}
+	if !h.EmitNpcInteraction(event) {
+		t.Fatal("Trade click: want handled")
+	}
+	if calls != 1 || !event.Handled {
+		t.Fatalf("calls=%d handled=%v, want 1/true", calls, event.Handled)
+	}
+	// Another option does not match.
+	if h.EmitNpcInteraction(&NpcInteractionEvent{Player: player, NPC: npc, NpcID: 2821, ClickType: 1, Location: npc.Location(), DefinitionName: "Shop keeper", Action: "Talk-to"}) {
+		t.Error("Talk-to click: want unhandled")
+	}
+	if calls != 1 {
+		t.Errorf("calls = %d, want 1 after non-matching emit", calls)
+	}
+}
+
+func TestOnAnyNpcInteractionRunsLast(t *testing.T) {
+	h, _ := newTestHub()
+	a := newApi(h, "OrderWatch")
+	var order []string
+	a.OnAnyNpcInteraction(map[string]NpcInteractionHandler{
+		"Trade": func(*NpcInteractionEvent) bool { order = append(order, "any"); return false },
+	})
+	a.OnNpcInteraction("Shop keeper", map[string]NpcInteractionHandler{
+		"Trade": func(*NpcInteractionEvent) bool { order = append(order, "name"); return false },
+	})
+	a.OnNpcClick([]int{2821}, 3, func(*NpcInteractionEvent) bool { order = append(order, "click"); return false })
+	player := testPlayer("alice")
+	npc := game.NewNPC(2821, game.Location{X: 3090, Y: 3519, Z: 0})
+	event := &NpcInteractionEvent{Player: player, NPC: npc, NpcID: 2821, ClickType: 3, Location: npc.Location(), DefinitionName: "Shop keeper", Action: "Trade"}
+	if h.EmitNpcInteraction(event) {
+		t.Fatal("all-false hooks: want unhandled")
+	}
+	if len(order) != 3 || order[0] != "click" || order[1] != "name" || order[2] != "any" {
+		t.Fatalf("order = %v, want [click name any]", order)
+	}
+	// A claiming name hook never reaches the any list.
+	h2, _ := newTestHub()
+	b := newApi(h2, "OrderWatch2")
+	anyCalls := 0
+	b.OnAnyNpcInteraction(map[string]NpcInteractionHandler{
+		"Trade": func(*NpcInteractionEvent) bool { anyCalls++; return true },
+	})
+	b.OnNpcInteraction("Shop keeper", map[string]NpcInteractionHandler{
+		"Trade": func(*NpcInteractionEvent) bool { return true },
+	})
+	if !h2.EmitNpcInteraction(&NpcInteractionEvent{Player: player, NPC: npc, NpcID: 2821, ClickType: 3, Location: npc.Location(), DefinitionName: "Shop keeper", Action: "Trade"}) {
+		t.Fatal("claiming name hook: want handled")
+	}
+	if anyCalls != 0 {
+		t.Errorf("anyCalls = %d, want 0 (short-circuit before the any list)", anyCalls)
+	}
+}
+
+func TestOnAnyNpcInteractionInvalidRegistration(t *testing.T) {
+	h, buf := newTestHub()
+	a := newApi(h, "AnyWatch")
+	a.OnAnyNpcInteraction(nil)
+	a.OnAnyNpcInteraction(map[string]NpcInteractionHandler{"Trade": nil})
+	if got := buf.String(); !strings.Contains(got, "invalid any npc interaction") {
+		t.Fatalf("log = %q, want an invalid-registration warning", got)
+	}
+	player := testPlayer("alice")
+	npc := game.NewNPC(2821, game.Location{X: 3090, Y: 3519, Z: 0})
+	if h.EmitNpcInteraction(&NpcInteractionEvent{Player: player, NPC: npc, NpcID: 2821, ClickType: 3, Location: npc.Location(), DefinitionName: "Shop keeper", Action: "Trade"}) {
+		t.Error("empty any hooks: want unhandled")
+	}
+}
+
+func TestHubAddNpcInteractionHooks(t *testing.T) {
+	h, _ := newTestHub()
+	clicks, anys := 0, 0
+	h.AddNpcClickHook("Engine", []int{2821}, 3, func(*NpcInteractionEvent) bool { clicks++; return false })
+	h.AddAnyNpcInteractionHook("Engine", map[string]NpcInteractionHandler{
+		"Trade": func(*NpcInteractionEvent) bool { anys++; return true },
+	})
+	// Invalid installs warn and drop.
+	h.AddNpcClickHook("Engine", []int{-1}, 3, func(*NpcInteractionEvent) bool { return true })
+	h.AddNpcClickHook("Engine", []int{2821}, 9, func(*NpcInteractionEvent) bool { return true })
+	h.AddAnyNpcInteractionHook("Engine", nil)
+	h.AddAnyNpcInteractionHook("Engine", map[string]NpcInteractionHandler{"Trade": nil})
+	player := testPlayer("alice")
+	npc := game.NewNPC(2821, game.Location{X: 3090, Y: 3519, Z: 0})
+	event := &NpcInteractionEvent{Player: player, NPC: npc, NpcID: 2821, ClickType: 3, Location: npc.Location(), DefinitionName: "Shop keeper", Action: "Trade"}
+	if !h.EmitNpcInteraction(event) {
+		t.Fatal("engine-installed any hook: want handled")
+	}
+	if clicks != 1 || anys != 1 {
+		t.Fatalf("clicks=%d anys=%d, want 1/1", clicks, anys)
 	}
 }

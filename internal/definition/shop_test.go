@@ -303,3 +303,63 @@ func TestShopSourceOrderingAndReplacement(t *testing.T) {
 		t.Fatalf("order = %d/%d/%d", shops[0].ID(), shops[1].ID(), shops[2].ID())
 	}
 }
+
+// TestShopNpcInteractions pins the traderKeys validity rules at load
+// (Shopkeepers.plugin.js traderKeys): slot must be an integer 1-5,
+// npc ids integers >= 0; invalid rows and ids are dropped. It also
+// pins IsCustomShop: ids from custom-shops.json report true (while
+// Source() stays "core", as in TS), shops.json ids report false.
+func TestShopNpcInteractions(t *testing.T) {
+	shops := `[{"id": 10, "name": "A", "npcInteractions": [
+			{"npcIds": [2821, 2822], "optionSlot": 3},
+			{"npcIds": [5], "optionSlot": 0},
+			{"npcIds": [6], "optionSlot": 6},
+			{"npcIds": [7, -1, 8.5], "optionSlot": 4},
+			{"npcIds": [], "optionSlot": 3},
+			{"npcIds": [9], "optionSlot": "3"},
+			{"optionSlot": 3},
+			{"npcIds": [10]}
+		]},
+		{"id": 11, "name": "B"}]`
+	custom := `[{"id": 12, "name": "C", "npcInteractions": [{"npcIds": [99], "optionSlot": 2}]}]`
+	store := loadShops(t, shopFiles(shops, custom), LoadOptions{})
+
+	shop, ok := store.Shop(10)
+	if !ok {
+		t.Fatalf("shop 10 missing")
+	}
+	got := shop.NpcInteractions()
+	want := []ShopNpcInteraction{
+		{NPCIDs: []int{2821, 2822}, OptionSlot: 3},
+		{NPCIDs: []int{7}, OptionSlot: 4},
+		// optionSlot "3" converts: TS traderKeys reads Number(),
+		// and Number("3") is the integer 3.
+		{NPCIDs: []int{9}, OptionSlot: 3},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("NpcInteractions = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i].OptionSlot != want[i].OptionSlot || len(got[i].NPCIDs) != len(want[i].NPCIDs) {
+			t.Fatalf("row %d = %+v, want %+v", i, got[i], want[i])
+		}
+		for j := range want[i].NPCIDs {
+			if got[i].NPCIDs[j] != want[i].NPCIDs[j] {
+				t.Fatalf("row %d ids = %v, want %v", i, got[i].NPCIDs, want[i].NPCIDs)
+			}
+		}
+	}
+	if shop, ok := store.Shop(11); !ok || len(shop.NpcInteractions()) != 0 {
+		t.Fatalf("shop 11 interactions = %v ok=%v", shop, ok)
+	}
+	if store.IsCustomShop(10) || store.IsCustomShop(11) || !store.IsCustomShop(12) || store.IsCustomShop(999) {
+		t.Fatalf("IsCustomShop: 10=%v 11=%v 12=%v 999=%v", store.IsCustomShop(10), store.IsCustomShop(11), store.IsCustomShop(12), store.IsCustomShop(999))
+	}
+	customShop, ok := store.Shop(12)
+	if !ok || customShop.Source() != "core" {
+		t.Fatalf("custom shop source = %q ok=%v (want core, as in TS)", customShop.Source(), ok)
+	}
+	if len(customShop.NpcInteractions()) != 1 || customShop.NpcInteractions()[0].NPCIDs[0] != 99 {
+		t.Fatalf("custom shop interactions = %+v", customShop.NpcInteractions())
+	}
+}

@@ -60,13 +60,16 @@
 // missing binding falls through in TS. ORDERING CAVEAT: in TS the
 // transcript runs inside emitNpcInteraction, AFTER specific
 // plugin handlers, while the static binding runs BEFORE them.
-// No NPC interaction hook family is ported yet
-// (onNpcInteraction/onBeforeNpcInteraction/onAnyNpcInteraction
-// stay table-only), so no specific handler exists and the order
-// is unobservable today. When those families land, the transcript
-// call must move into the emit (any-hooks last) and StartDialogue
-// must narrow to static bindings only — the seam's adapter, not
-// this file, owns that split.
+// onNpcClick (phase 33), onNpcInteraction (phase 35), and
+// onAnyNpcInteraction (phase 41) are firable now; only
+// onBeforeNpcInteraction stays table-only. The transcript has
+// NOT yet moved into the emit (any-hooks last), and StartDialogue
+// has NOT yet narrowed to static bindings only — the seam's
+// adapter, not this file, owns that split — so a Talk-to click
+// still starts the dialogue before the emit runs, where TS would
+// let a specific handler claim it first. In practice no shipped
+// specific handler claims Talk-to, so the order is unobservable
+// today.
 //
 // Walk-to: walkToEntity (MovementQueue.ts:1478-1589) is NOT
 // STARTED in Go — no NPC interaction targets exist in the queue
@@ -630,16 +633,33 @@ func npcAction(p *game.Player, msg protocol.NpcOption, cycle int64, deps Deps) n
 		route.Range = npcVisibilityRange
 	}
 
+	// The click-time type, for the targetValid type check
+	// below: a transform mutates the NPC in place, so the
+	// closure must compare against the captured type, not
+	// against the (same) object it already holds.
+	clickedType := npc.ContentID()
+
 	// Arrival closure: the walkToEntity runnable (lines
 	// 78-93) through operate/dispatch (lines 106-172).
 	arrival := func() {
 		// Target re-validation (the walkToEntity task's
-		// targetValid): the NPC standing on the clicked
-		// tile must still be the clicked NPC — same id,
-		// same tile. A despawned, moved, or replaced NPC
-		// drops the interaction silently.
+		// targetValid, MovementQueue.ts:1525): the NPC in
+		// the clicked slot must still be a valid
+		// interaction target of the same type — still
+		// registered, alive, on the player's plane, and
+		// showing the same content id (a transform, e.g.
+		// a sheep sheared mid-walk, drops it;
+		// MovementQueue.ts:1690-1704). TS does NOT
+		// require the NPC to still stand on the clicked
+		// tile: a wandering NPC (a shopkeeper) that steps
+		// away mid-walk still gets its interaction when
+		// the player arrives adjacent. The Go port
+		// previously compared tiles here and silently
+		// dropped wandering-NPC clicks — found live in
+		// phase 41 (Trade on Shop keeper 2821 never
+		// opened the shop).
 		current := deps.NPCs.Find(msg.Index)
-		if current == nil || current.ID != npc.ID || current.Location() != npcLoc {
+		if current == nil || current.ID != npc.ID || current.ContentID() != clickedType || current.Hitpoints <= 0 || current.Location().Z != p.Location().Z {
 			return
 		}
 		// Definition + option re-read (lines 78-79), and
@@ -696,11 +716,10 @@ func npcOperate(p *game.Player, npc *game.NPC, index, clickType int, def NpcDefi
 	// Talk-to click bound to a shop action whose open fails
 	// reaches the fallback message instead of the transcript
 	// a TS any-hook would play. Shop actions bind to Trade,
-	// not Talk-to, so the case is hypothetical; when the NPC
-	// interaction families land and the transcript moves into
-	// the emit, it disappears. Non-shop actions (including a
-	// missing action or an unwired source) proceed to
-	// StartDialogue exactly as before.
+	// not Talk-to, so the case is hypothetical; when the
+	// transcript moves into the emit, it disappears. Non-shop
+	// actions (including a missing action or an unwired source)
+	// proceed to StartDialogue exactly as before.
 	skipDialogue := false
 	if shopID, isShop, valid := staticShopID(deps, npc.ContentID(), clickType); isShop {
 		skipDialogue = true

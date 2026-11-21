@@ -59,6 +59,17 @@ type ShopStockDefinition struct {
 	Price        *int
 }
 
+// ShopNpcInteraction is one npcInteractions trader row of a shop
+// (ShopDefinition.ts: raw `npcInteractions`): the NPC ids whose
+// option at optionSlot opens this shop. Shopkeepers.plugin.js
+// traderKeys reads these rows; the loader applies its validity
+// rules at load (slot integer 1-5, npc ids integers >= 0), so the
+// stored rows are exactly the keys the plugin binds.
+type ShopNpcInteraction struct {
+	NPCIDs     []int
+	OptionSlot int
+}
+
 // ShopDefinition is one shop (ShopDefinition.ts:27-101).
 type ShopDefinition struct {
 	id                   int
@@ -70,6 +81,7 @@ type ShopDefinition struct {
 	soldItemDestockTicks int
 	source               string
 	salesPolicy          ShopSalesPolicy
+	npcInteractions      []ShopNpcInteraction
 }
 
 // ID returns the shop id.
@@ -103,6 +115,14 @@ func (d *ShopDefinition) Source() string { return d.source }
 // SalesPolicy returns the shop's sales policy.
 func (d *ShopDefinition) SalesPolicy() ShopSalesPolicy { return d.salesPolicy }
 
+// NpcInteractions returns the shop's trader rows: the (npcId,
+// optionSlot) bindings that open this shop (Shopkeepers.plugin.js
+// traderKeys). Rows are already validity-filtered at load (slot
+// 1-5, npc ids >= 0); a shop with no traders returns nil.
+func (d *ShopDefinition) NpcInteractions() []ShopNpcInteraction {
+	return append([]ShopNpcInteraction(nil), d.npcInteractions...)
+}
+
 // Shop returns the shop definition for an id, or false
 // (ShopDefinition.forId, ShopDefinition.ts:58-60).
 func (s *Store) Shop(id int) (*ShopDefinition, bool) {
@@ -117,6 +137,16 @@ func (s *Store) Shops() []*ShopDefinition {
 	return append([]*ShopDefinition(nil), s.shopList...)
 }
 
+// IsCustomShop reports whether shop id came from
+// custom-shops.json (Shopkeepers.plugin.js customShopkeepers
+// reads that file separately from shops.json). The merged
+// definition's Source() is "core" either way — exactly as TS
+// reports — so file origin is the only distinction. A shop id
+// absent from both files reports false.
+func (s *Store) IsCustomShop(id int) bool {
+	return s != nil && s.customShopIDs[id]
+}
+
 // loadShops ports ShopDefinitionLoader.load()
 // (ShopDefinitionLoader.ts:54-97): the core source ("core",
 // priority 0) concatenates shops.json and custom-shops.json —
@@ -128,15 +158,34 @@ func (s *Store) Shops() []*ShopDefinition {
 // stock is dropped.
 func (s *Store) loadShops() error {
 	contributed, failures := s.registry.loadSources(shopsDefinitionType, s.logf)
-	core, err := s.readCoreShops()
+	core, custom, err := s.readCoreShops()
 	if err != nil {
 		return err
 	}
+	// Custom-shop ids are recorded separately: the core source
+	// concatenates both files under source "core" (exactly as TS
+	// ShopDefinitionLoader.readCoreDefinitions does — a custom
+	// shop's getSource() is "core" too), so the file origin is
+	// the only thing that tells Shopkeepers' customShopkeepers
+	// apart from its defaultShopkeepers. The marker reflects
+	// file origin only: a later contributed source replacing
+	// the shop does not clear it, matching TS, where
+	// customShopkeepers reads custom-shops.json directly
+	// regardless of the merged definition table.
+	if s.customShopIDs == nil {
+		s.customShopIDs = make(map[int]bool)
+	}
+	for _, raw := range custom {
+		if idNum := numField(raw, "id"); isJSInteger(idNum) && jsTrunc(idNum) >= 0 {
+			s.customShopIDs[jsTrunc(idNum)] = true
+		}
+	}
+	definitions := append(append([]any(nil), core...), custom...)
 	sources := append([]LoadedSource{{
 		Name:        "core",
 		Owner:       "core",
 		Priority:    0,
-		Definitions: core,
+		Definitions: definitions,
 	}}, contributed...)
 	sortLoadedSources(sources)
 
@@ -177,24 +226,27 @@ func (s *Store) loadShops() error {
 // (custom-shops.json is shop data the TS loader reads as a core
 // file; it is not a cache overlay, so reading it here does not
 // cross into the overlay work's custom-definitions territory.)
-func (s *Store) readCoreShops() ([]any, error) {
+// The two files' rows are returned separately so loadShops can
+// record which ids came from custom-shops.json (see
+// IsCustomShop); the merged order is still shops.json first.
+func (s *Store) readCoreShops() (core, custom []any, err error) {
 	files := []string{
 		filepath.Join(s.dir, "shops.json"),
 		filepath.Join(s.dir, "custom-shops.json"),
 	}
-	var definitions []any
-	for _, file := range files {
+	rowsByFile := make([][]any, len(files))
+	for i, file := range files {
 		parsed, err := readJSONValue(file)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		rows, ok := parsed.([]any)
 		if !ok {
-			return nil, fmt.Errorf("%s must contain an array", file)
+			return nil, nil, fmt.Errorf("%s must contain an array", file)
 		}
-		definitions = append(definitions, rows...)
+		rowsByFile[i] = rows
 	}
-	return definitions, nil
+	return rowsByFile[0], rowsByFile[1], nil
 }
 
 // toShop is toDefinition (ShopDefinitionLoader.ts:116-213).
@@ -340,6 +392,7 @@ func (s *Store) toShop(raw any, source string, unresolved map[string]bool) (*Sho
 		defaultDestockTicks:  defaultDestockTicks,
 		soldItemDestockTicks: soldItemDestockTicks,
 		source:               source,
+		npcInteractions:      parseShopNpcInteractions(raw),
 		salesPolicy: ShopSalesPolicy{
 			GeneralStore: generalStore,
 			BuysNothing:  buysNothing,
@@ -348,6 +401,48 @@ func (s *Store) toShop(raw any, source string, unresolved map[string]bool) (*Sho
 			ChangePer:    perMille(mustNum(raw, "changePer")),
 		},
 	}, true
+}
+
+// parseShopNpcInteractions ports the validity half of
+// Shopkeepers.plugin.js traderKeys for one shop's raw
+// `npcInteractions` rows: a row counts only when optionSlot is an
+// integer 1-5, and only npc ids that are integers >= 0 count (a
+// row left with no ids is dropped). A missing or non-array value
+// yields no rows. The loader applies these rules so every consumer
+// of NpcInteractions sees exactly the keys the plugin binds.
+func parseShopNpcInteractions(raw any) []ShopNpcInteraction {
+	rows, ok := mustNum(raw, "npcInteractions").([]any)
+	if !ok {
+		return nil
+	}
+	var out []ShopNpcInteraction
+	for _, row := range rows {
+		slotNum := numField(row, "optionSlot")
+		if !isJSInteger(slotNum) {
+			continue
+		}
+		slot := jsTrunc(slotNum)
+		if slot < 1 || slot > 5 {
+			continue
+		}
+		ids, ok := mustNum(row, "npcIds").([]any)
+		if !ok {
+			continue
+		}
+		var npcIDs []int
+		for _, idRaw := range ids {
+			n := jsNumber(idRaw, true)
+			if !isJSInteger(n) || jsTrunc(n) < 0 {
+				continue
+			}
+			npcIDs = append(npcIDs, jsTrunc(n))
+		}
+		if len(npcIDs) == 0 {
+			continue
+		}
+		out = append(out, ShopNpcInteraction{NPCIDs: npcIDs, OptionSlot: slot})
+	}
+	return out
 }
 
 // shopRowPrice computes one stock row's price: the prices map
