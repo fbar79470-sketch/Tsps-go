@@ -14,6 +14,7 @@ import (
 	// compile-time by design (see internal/plugins/doc.go).
 	_ "tsps-go/internal/content/admincommands"
 	_ "tsps-go/internal/content/cooking"
+	_ "tsps-go/internal/content/crafting"
 	_ "tsps-go/internal/content/dateminutes"
 	_ "tsps-go/internal/content/fishing"
 	_ "tsps-go/internal/content/fletching"
@@ -74,6 +75,9 @@ func newPluginHub(worldDef *config.World, logger *log.Logger, defs *cache.CacheD
 		return nil, err
 	}
 	if err := installCookingTables(worldDef, defs); err != nil {
+		return nil, err
+	}
+	if err := installCraftingTables(worldDef, defs); err != nil {
 		return nil, err
 	}
 	if err := installMiningTables(worldDef, defs); err != nil {

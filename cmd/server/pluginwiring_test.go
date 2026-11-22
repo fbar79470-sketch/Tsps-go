@@ -26,13 +26,14 @@ func TestNewPluginHubLoadsCompiledInContent(t *testing.T) {
 	// the blank imports in pluginwiring.go). Mining (phase 42,
 	// no members flag — F2P) loads between Fishing and
 	// Woodcutting. Cooking (phase 36, no members flag — F2P)
-	// loads last.
+	// loads after Woodcutting. Crafting (phase 44, no members
+	// flag — F2P) loads between Cooking and Smithing.
 	hub, err := newPluginHub(&config.World{}, log.Default(), nil)
 	if err != nil {
 		t.Fatalf("newPluginHub: %v", err)
 	}
 	loaded := hub.Loaded()
-	want := []string{"AdminCommands", "DateMinutes", "LumbridgeGuide", "Shopkeepers", "WildernessDitch", "WornWeights", "Fishing", "Mining", "Woodcutting", "Cooking", "Smithing"}
+	want := []string{"AdminCommands", "DateMinutes", "LumbridgeGuide", "Shopkeepers", "WildernessDitch", "WornWeights", "Fishing", "Mining", "Woodcutting", "Cooking", "Crafting", "Smithing"}
 	if len(loaded) != len(want) {
 		t.Fatalf("Loaded() = %v, want %v", loaded, want)
 	}
@@ -56,10 +57,11 @@ func TestNewPluginHubLoadsMembersContentOnMembersWorld(t *testing.T) {
 	// WornWeights and Woodcutting; Fishing (phase 35, no members
 	// flag — F2P) loads between WornWeights and Fletching, and
 	// Woodcutting (phase 32, no members flag) loads before
-	// Cooking (phase 36, no members flag — F2P), which loads
-	// last. Mining (phase 42, no members flag — F2P) loads
-	// between Fletching and Woodcutting. Smithing (phase 43,
-	// no members flag — F2P) loads after Cooking, last.
+	// Cooking (phase 36, no members flag — F2P). Mining (phase
+	// 42, no members flag — F2P) loads between Fletching and
+	// Woodcutting. Smithing (phase 43, no members flag — F2P)
+	// loads last, after Crafting (phase 44, no members flag —
+	// F2P), which loads between Cooking and Smithing.
 	// AdminCommands (phase 38, no members flag) loads first,
 	// before DateMinutes.
 	hub, err := newPluginHub(&config.World{MembersWorld: true}, log.Default(), nil)
@@ -67,7 +69,7 @@ func TestNewPluginHubLoadsMembersContentOnMembersWorld(t *testing.T) {
 		t.Fatalf("newPluginHub: %v", err)
 	}
 	loaded := hub.Loaded()
-	want := []string{"AdminCommands", "DateMinutes", "GracefulOutfit", "LumbridgeGuide", "SeekingArrows", "Shopkeepers", "WildernessDitch", "WornWeights", "Fishing", "Fletching", "Mining", "Woodcutting", "Cooking", "Smithing"}
+	want := []string{"AdminCommands", "DateMinutes", "GracefulOutfit", "LumbridgeGuide", "SeekingArrows", "Shopkeepers", "WildernessDitch", "WornWeights", "Fishing", "Fletching", "Mining", "Woodcutting", "Cooking", "Crafting", "Smithing"}
 	if len(loaded) != len(want) {
 		t.Fatalf("Loaded() = %v, want %v", loaded, want)
 	}
@@ -82,18 +84,19 @@ func TestNewPluginHubSwitchDisablesDateMinutes(t *testing.T) {
 	// A world.json switch turning DateMinutes off keeps it out of
 	// the loaded set, and the hub logs it as disabled. AdminCommands,
 	// LumbridgeGuide, Shopkeepers, WildernessDitch, WornWeights,
-	// Woodcutting, Fishing, Mining, Cooking and Smithing (no switches)
+	// Crafting, Woodcutting, Fishing, Mining, Cooking and Smithing (no switches)
 	// still load (AdminCommands first; Shopkeepers between
 	// LumbridgeGuide and WildernessDitch; Fishing between WornWeights
-	// and Woodcutting; Smithing last); GracefulOutfit stays gated
-	// out of the free world.
+	// and Woodcutting; Smithing last, after Crafting);
+	// GracefulOutfit stays gated out of the free world.
+	// Crafting loads between Cooking and Smithing.
 	var buf bytes.Buffer
 	hub, err := newPluginHub(&config.World{Plugins: map[string]bool{"DateMinutes": false}}, log.New(&buf, "", 0), nil)
 	if err != nil {
 		t.Fatalf("newPluginHub: %v", err)
 	}
-	if loaded := hub.Loaded(); len(loaded) != 10 || loaded[0] != "AdminCommands" || loaded[1] != "LumbridgeGuide" || loaded[2] != "Shopkeepers" || loaded[3] != "WildernessDitch" || loaded[4] != "WornWeights" || loaded[5] != "Fishing" || loaded[6] != "Mining" || loaded[7] != "Woodcutting" || loaded[8] != "Cooking" || loaded[9] != "Smithing" {
-		t.Fatalf("Loaded() = %v, want [AdminCommands LumbridgeGuide Shopkeepers WildernessDitch WornWeights Fishing Mining Woodcutting Cooking Smithing]", loaded)
+	if loaded := hub.Loaded(); len(loaded) != 11 || loaded[0] != "AdminCommands" || loaded[1] != "LumbridgeGuide" || loaded[2] != "Shopkeepers" || loaded[3] != "WildernessDitch" || loaded[4] != "WornWeights" || loaded[5] != "Fishing" || loaded[6] != "Mining" || loaded[7] != "Woodcutting" || loaded[8] != "Cooking" || loaded[9] != "Crafting" || loaded[10] != "Smithing" {
+		t.Fatalf("Loaded() = %v, want [AdminCommands LumbridgeGuide Shopkeepers WildernessDitch WornWeights Fishing Mining Woodcutting Cooking Crafting Smithing]", loaded)
 	}
 	if !strings.Contains(buf.String(), "disabled=") {
 		t.Errorf("hub log %q does not report the disabled plugin", buf.String())

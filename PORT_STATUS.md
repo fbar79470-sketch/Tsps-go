@@ -8,16 +8,90 @@ findings) lives outside this repository; status values below mean:
 ported, gaps listed), **NOT STARTED** (absent — nothing here
 pretends otherwise).
 
-Last updated: 2026-11-21 (phase 43 run: Smithing skill —
-smelting + anvil + cannonballs + godswords + dragon shields
-+ spears + Superheat, live-verified in 7 smoke legs, 38
-checks, 0 failures. 4,863 tests passing, 26 packages.
-Quests are postponed per Tyler's 2026-11-16 instruction
-(Doric's Quest picked but deferred); Tyler decided
-2026-11-17: combat leftovers first, then adding all skills
-— see "Next modules".)
+Last updated: 2026-11-21 (phase 44 run: Crafting skill —
+core loop + all 12 sub-units, `crafting:spun` producer for
+Fletching's spool, live-verified in 8 smoke legs, 68 of 71
+checks passing (the 3 failures are a corrected leg premise,
+not a port bug — see the phase-44 paragraph). 4,946 tests
+passing, 27 packages. Quests are postponed per Tyler's
+2026-11-16 instruction (Doric's Quest picked but deferred);
+Tyler decided 2026-11-17: combat leftovers first, then
+adding all skills — see "Next modules". Tyler picked Magic
+as phase 45 on 2026-11-21 18:11 PST.)
 
 ## What was verified in this run
+
+- Phase 44 (`go build ./...`, `go vet ./...`, `gofmt -l .`:
+  clean. `CGO_ENABLED=0 go build ./...`: clean. 835 `.go`
+  files, 27 packages (new `internal/content/crafting`, 26
+  files; no new hub family — 59/108 firable, unchanged).
+- Phase 44 `go test ./... -p 1 -count=1 -v`: all 27 packages
+  pass (4,946 passing test cases: 3,764 top-level + 1,182
+  subtests, 0 failures, 0 skips — 4,863 from phase 43 + 83
+  new: 5 loader/foundation (all 271 `crafting.json` names
+  resolve — 112 via lowercase gameval + 159 via the
+  fallback table transcribed from `ItemIdentifiers.ts` with
+  display-name verification, enums 4318/4319, varbits
+  13892/13893/3207, 12 sequences) and 78 units (leather
+  thread accounting, gem crush curve, jewellery
+  quantity/varbits/fall-through, pottery crack curve,
+  spinning `crafting:spun` + spool absorb, walk-away/member
+  filtering); the temporary phase-44 probe tests were
+  deleted after use. Zenyte gem-cut XP is 50 in
+  `crafting.json` (OSRS says 200) — ported as-is, per the
+  verbatim-import rule.
+- Phase 44 `go test -race ./...`: the coordinator's run was
+  clean, 27/27 packages ok, exit 0, no DATA RACE warnings,
+  and the known `TestEngineTicksAtRate` timing flake did
+  not appear (coordinator-verified independently; the
+  workers' race runs were clean too). The parent's first
+  full run failed only on the known §20 race-load timing
+  issue in `cmd/server`
+  (`TestShutdownEngineDrivenSavesWalkedPosition`: "timed
+  out waiting for walk arrival", no DATA RACE); a re-run
+  of `cmd/server` with `-race` passed clean.
+- Live phase-44 smoke tests (throwaway harness in
+  `/home/hatch/smoke44/`, eight modes driving a real
+  WebSocket client against the real server binary + real
+  rev-242 cache from a temp root outside the repo; legs run
+  singly, 68 of 71 checks passing): jewellery PASS 13/13
+  (interface 446, varp 2224 1→5, 5 gold rings + 75 XP,
+  varbit 13892 moved, 1 sapphire ring + 40 XP), spinning
+  PASS 11/11 (menu mode 16, anim 13139, sound 2590, wheel
+  loc anim 466; spool absorbed live — varbit 17291 = 5 on
+  the wire, `fletching:spool-charges` = 5 in the save, 0
+  bow strings left in inventory), cutting PASS 9/9 (3
+  sapphires, 150 XP, anim 888, sound 2586), leather PASS
+  9/9 (5 gloves, XP 13428 — 13.8→13 truncation confirmed
+  — thread reel consumed on the 5th use), pottery PASS
+  16/16 (soft-clay mix chat with `<br>`, shape menu mode 0,
+  3 unfired pots, fire menu mode 9, 3 pots fired, XP 13399
+  — 6+6 per pot), full-inventory 2/5 (see below),
+  walkaway PASS 5/5 (count frozen at 1 bow string, no late
+  anims), furnace fall-through PASS 3/3 (Smithing bars
+  menu opens, Bronze first, with ore and no mould). The
+  full-inventory leg's 3 failures are a corrected leg
+  premise, not a port bug: with a full inventory, spinning
+  still made 1 bow string (+15 XP, flax 5→4) because
+  `canGrantAfterConsumption` previews after deleting the
+  material, so a 1:1 craft always fits in the freed slot —
+  TS-faithful (true in real OSRS too); no Crafting recipe
+  can refuse on a full inventory through this path. Two
+  harness issues fixed in the harness, not the port:
+  seeding non-stackable flax/sapphires as one-slot stacks
+  (one `DeleteNumber` clears the whole slot — seed one
+  per slot, the smoke43 trap) and the recorder returning
+  the first recorded 2046 frame instead of the latest
+  (which hid the mode-9 fire menu). Sub-units unit-covered
+  only, not observed live: weaving, battlestaves, snelm,
+  limestone, light orbs, buttons, gem sickles, perfect
+  jewellery (two-mould prompt), amethyst, glassblowing,
+  silver jewellery, combine, hunters' pouches. Station
+  coordinates probe-verified vs the real cache: Furnace
+  24009 at (3226,3256,0); Potter's Wheel 14887 at
+  (3087,3409,0); Pottery Oven 11601 at (3084,3407,0);
+  Spinning wheel 14889 at (3081,3430,0) and (3209,3212,1).
+  No NPC staging was needed (stations are map objects).
 
 - Phase 43 (`go build ./...`, `go vet ./...`, `gofmt -l .`:
   clean. `CGO_ENABLED=0 go build ./...`: clean. 808 `.go`
@@ -790,6 +864,22 @@ Quests are postponed per Tyler's 2026-11-16 instruction
   all read from the cache; 5 fallback constants for names
   with no (correct) gameval, incl. STEEL_CANNONBALL → 2
   (ItemIdentifiers.ts:5, cache item 2 "Steel cannonball").
+  The same applies to `data/definitions/crafting.json`
+  (crafting recipes — levels, XP, materials, menus,
+  timings, messages; ItemIdentifiers names), imported
+  verbatim 2026-11-21 on Tyler's approval (widget tap
+  "Import the Crafting file", SHA-256 verified identical
+  to upstream, `bdeeb5b3...`) — the Go loader landed in
+  Phase 44 (`internal/content/crafting/tables.go`, wired by
+  `cmd/server/craftingwiring.go`): load-proven against the
+  real rev-242 cache, all 271 JSON names resolve (112 via
+  lowercase gameval + 159 via a fallback table transcribed
+  from `ItemIdentifiers.ts`, each display-name-verified);
+  enums 4318 (33 entries) / 4319 (20 entries); varbits
+  13892 / 13893 / 3207; 12 sequences. The file stays
+  verbatim; mismatches are resolved in Go code, never by
+  editing the JSON (zenyte gem-cut XP is 50 in the file,
+  OSRS says 200 — ported as-is).
 
 ## Module inventory
 
@@ -824,7 +914,7 @@ Quests are postponed per Tyler's 2026-11-16 instruction
 | P2 | Interface runtime: `Player` interface id, `PacketSender` interface mounts, `InterfaceLayoutRegistry`, `InterfaceActionClickOpcode`, entered-amount/syntax prompts, the live varp/varbit store | `internal/game` (interface id + close gate, entered actions), `internal/session` (mount tracking + sender surface, varp store), `internal/definition` (layout open dispatch), `internal/listeners` (action dispatch, prompt answers, close case), `internal/plugins` (interface families), `cmd/server` (wiring) | DONE (phase 18, live-verified: interface open/close/layering + close-on-movement/logout/death + layout open dispatch on all 7 surfaces + action dispatch to hub hooks with prompt-first order + entered-amount/syntax prompts + varp/varbit store with change detection, varbit packing, and replay; session-only, nothing persists; `VarManager` transform plumbing, `registerCustomInterface`, bank interface flows, and the per-player vars seam are gaps — see notes) |
 | P2 | Clans/social: `PlayerRelations`, social-packet dispatch, friends-chat-snapshot + clan encoders | `internal/game` (relations, names, chat gate), `internal/protocol` (social decoders/encoders), `internal/session` (social senders), `internal/listeners` (social dispatch), `internal/persist` (relations ownership), `internal/plugins` (social-packet variants), `cmd/server` (wiring) | DONE (phase 19, live-verified: whole `PlayerRelations` port + live chat gate + all 8 social-packet kinds emitted to the hub + snapshot/clan encoders + relations owned save state + logout presence-offline; friends-chat channels + the clan system are plugin content (FriendsList/Clans, NOT ported — the engine unlocks them); the legacy friend/ignore presence sends are no-ops, exactly as in TS (`PlayerSession.write` is a no-op upstream) — live presence comes from the snapshot, which content sends; chat modes session-only — see notes) |
 | P3 | Plugin hub: `PluginManager`, `PluginTypes` | `internal/plugins` + `cmd/server` (`pluginwiring.go`) | DONE (compile-time registry, dependency-ordered loading, config-declaration validation, world.json switches, members-gating, lifecycle + custom-event + command/social-packet + object-interaction + dialogue + zone + combat + shop/trade + interface + skills + world-entity-interaction hooks with per-hook error isolation, gate contracts, scoped core surface, login extensions; the social-packet family fires all 8 kinds since phase 19 (same family, not a new one — the count is unchanged); onCanAttack became firable in phase 26; onSpellDisabled + onSpellRuneBypass became firable in phase 27; onShouldDropItemsOnDeath + onShouldKeepItemOnDeath + onPlayerDefeated + onPlayerDeathItemDrop + onPlayerDeathDrops became firable in phase 28 (51 of 108); the onItemAction family became firable in phase 32 (onItemAction/onItemActionNamed/onItemFirstAction/onCanUseItem, 54 of 108); the onNpcClick family became firable in phase 33 (onNpcClick, with the NPC remains-delay + transform seams in the death flow) and the onItemOnItem family became firable in phase 33 (onItemOnItem/onItemOnItemNamed, riding INVENTORY_USE_ON kind 4 — there is no separate item-on-item opcode), and the onNpcInteraction family became firable in phase 35 (onNpcInteraction, name hooks after the onNpcClick bindings — TS order, `NPCOptionPacketListener.ts:122/:132` — with the `DefinitionName`/`Action`/`Actions` fields on the hub event; `OnNpcsInteraction`/`OnBeforeNpcInteraction`/`OnNpcRoute` stay table-only), and the onAnyNpcInteraction family became firable in phase 41 (onAnyNpcInteraction, the generic list last after the name hooks — TS order, `PluginManager.ts:1246-1263` — with `Hub.AddNpcClickHook`/`Hub.AddAnyNpcInteractionHook` engine installs that bypass the load seal so Shopkeepers bindings can be installed post-Load; `OnNpcsInteraction`/`OnBeforeNpcInteraction`/`OnNpcRoute` stay table-only), and the onSpellOnItem family became firable in phase 43 (onSpellOnItem, fired from castSpellOnItem in the MagicOnItem listener through the listeners' `SpellHooks.EmitSpellOnItem` seam wired in spellwiring.go; Superheat Item is its first consumer), 59 of 108; 49 of 108 hook families have no registration method yet — documented in the unfired-family table with the missing system named — and 29 of 95 non-hook members are ported, and 12 of 191 Core members — see notes; hub-count correction in phase 31: earlier versions of this document said 53/108, counting registration *methods* as *families* — Go has 63 `Api.On*` methods but four are named overloads of already-counted families (`OnObjectInteractionNamed`, `OnItemOnObjectNamed`, `OnItemActionNamed`, `OnItemOnItemNamed`), so 59 distinct families are firable (63 methods) and 49 are table-only; `hooks.go`'s header says fifty-nine (updated in phase 43; the phase-35 plan's "5 named overloads" was wrong — recount: exactly 4 `*Named` methods) |
-| P3 | All `plugins/` content (2,907 JS files, 789,355 lines) | Go packages under `internal/content/` | PARTIAL (14 of 577 entries ported: DateMinutes (phase 10), GracefulOutfit + WornWeights (phase 22), LumbridgeGuide (phase 23), SeekingArrows (phase 24), Woodcutting (phases 32–33 — core loop + all sub-units except the Guild, which needs Tyler's `woodcutting-guild.json` import approval), Fletching (phase 34 — full skill: Shared loop, Recipes, Spool, Diaries, CreationMenu seam, all live-verified), Fishing (phase 35 — core loop + 8 of 10 sub-units, MinnowPlatform / Gita exchange / Guild door deferred, live-verified in 4 modes), Cooking (phase 36 — full skill: Cookers, Recipes, Wine, Churn, SacredEel, LeapingFish, Gnome, live-verified on fire/range/wine legs), AdminCommands (phase 38 — `::item` only, the first registered command, live-verified: admin spawn + denial path), WildernessDitch (phase 40 — `Cross` on object 23271 with the ForceMovement glide + click delay, live-verified: south/north/turn crossings + the wall leg), Shopkeepers (phase 41 — `shops.json` npcInteractions bindings via onAnyNpcInteraction + 19 item / 13 point currencies, live-verified: shop-open/buy/sell/shared/tokkul legs, 32 checks), Mining (phase 42 — full skill: core loop + all 8 sub-units, live-verified: copper/tin, depletion, full-inventory, walk-away legs, 18 checks), Smithing (phase 43 — full skill: smelting + anvil + cannonballs + godswords + dragon shields + spears + Superheat, new onSpellOnItem seam, live-verified: smelt/smith/menu/walkaway/ore-on-furnace/bar-on-anvil/full legs, 38 checks), all live-verified; the rest per `CONTENT_MIGRATION_PLAN.md`, piece by piece with Tyler's direction; no wholesale port) |
+| P3 | All `plugins/` content (2,907 JS files, 789,355 lines) | Go packages under `internal/content/` | PARTIAL (15 of 577 entries ported: DateMinutes (phase 10), GracefulOutfit + WornWeights (phase 22), LumbridgeGuide (phase 23), SeekingArrows (phase 24), Woodcutting (phases 32–33 — core loop + all sub-units except the Guild, which needs Tyler's `woodcutting-guild.json` import approval), Fletching (phase 34 — full skill: Shared loop, Recipes, Spool, Diaries, CreationMenu seam, all live-verified), Fishing (phase 35 — core loop + 8 of 10 sub-units, MinnowPlatform / Gita exchange / Guild door deferred, live-verified in 4 modes), Cooking (phase 36 — full skill: Cookers, Recipes, Wine, Churn, SacredEel, LeapingFish, Gnome, live-verified on fire/range/wine legs), AdminCommands (phase 38 — `::item` only, the first registered command, live-verified: admin spawn + denial path), WildernessDitch (phase 40 — `Cross` on object 23271 with the ForceMovement glide + click delay, live-verified: south/north/turn crossings + the wall leg), Shopkeepers (phase 41 — `shops.json` npcInteractions bindings via onAnyNpcInteraction + 19 item / 13 point currencies, live-verified: shop-open/buy/sell/shared/tokkul legs, 32 checks), Mining (phase 42 — full skill: core loop + all 8 sub-units, live-verified: copper/tin, depletion, full-inventory, walk-away legs, 18 checks), Smithing (phase 43 — full skill: smelting + anvil + cannonballs + godswords + dragon shields + spears + Superheat, new onSpellOnItem seam, live-verified: smelt/smith/menu/walkaway/ore-on-furnace/bar-on-anvil/full legs, 38 checks), Crafting (phase 44 — full skill: core loop + all 12 sub-units, `crafting:spun` producer for Fletching's spool, live-verified: jewellery/spinning/cutting/leather/pottery/walkaway/fall-through legs, 68 of 71 checks — the 3 failures are a corrected leg premise, see the phase-44 paragraph), all live-verified; the rest per `CONTENT_MIGRATION_PLAN.md`, piece by piece with Tyler's direction; no wholesale port) |
 | P3 | Bots: `plugins/bots/` + bot runtime | undecided | NOT STARTED |
 | P3 | WebRTC transport | undecided | NOT STARTED |
 | P3 | Browser host: `BrowserHostHttpBridge`, IndexedDB persistence | undecided | NOT STARTED |
@@ -3754,11 +3844,13 @@ pick is Tyler's. Verification counts are unchanged from phase 24
     grant takes an integer where TS takes a float). (b)
     Quest/Slayer-gated recipes are locked fail-closed
     (no quest/Slayer state exists to check against yet).
-    (c) `crafting:spun` has no producer, `level-up:
+    (c) `crafting:spun` HAS a producer since phase 44
+    (Spinning emits it per spun item; the spool absorbs
+    live — see the phase-44 paragraph), `level-up:
     popup-opened` is never emitted, `fletching:shafts`
     is answered but has no consumer yet, and `diary:task`
-    has no consumer — all four are honest dead ends until
-    their counterpart systems land. (d) No SkillLevelUp
+    has no consumer — the last three are honest dead ends
+    until their counterpart systems land. (d) No SkillLevelUp
     emitter exists (same gap as Woodcutting). (e) The
     force-movement task stop is unported (no Go seam —
     the same Woodcutting gap 16 item). (f) Spool messages
@@ -4140,6 +4232,57 @@ pick is Tyler's. Verification counts are unchanged from phase 24
     but no live spell cast was run; the live legs cover the
     core loops: smelt, smelt-menu, anvil, walk-away,
     ore-on-furnace, bar-on-anvil, full-inventory).
+
+27. Phase 44 residual gaps (Crafting; all documented at
+    the port sites, none silent): (a) XP integer truncation
+    (leather gloves 13.8 → 13, snelm 32.5 → 32, pot 6.3 →
+    6, gold ring 15 stays 15) — structural, same gap as
+    16–19/25/26. (b) No `SkillLevelUp` emitter;
+    `level-up:popup-opened` never emitted in Go (session
+    pause dead). (c) `skills:level-boost` /
+    `skills:actions-per-cycle` / `skills:action-interval` /
+    `skills:produced` unanswered (defaults: boost 0, 1
+    action per cycle, tabled interval, emit with no
+    consumer). (d) Quest gates fail-closed
+    (`quest:get-stage` unanswered): pot lids (One Small
+    Favour, stage 34) locked; gem sickles
+    (`crafting:gem-sickle-allowed` unanswered) never
+    allowed. (e) `sendMultiChatboxPrompt` DOES have a Go
+    seam after all (`Api.SendMultiChatboxPrompt`, installed
+    at boot) — the plan's gap 27(e) premise was outdated:
+    perfect jewellery (both moulds) and gem sickles DO
+    prompt; recorded here so the plan's correction is
+    visible. (f) `diary:is-complete` unanswered: the
+    Seers' Village 2-tick flax spin never applies; always
+    3 ticks. (g) Limestone carving never fails (live
+    failure below 40 has no known rate or line — every
+    carve succeeds). (h) Combine counts only plain pieces;
+    Go has no presets, so plain == total (simplification,
+    not a divergence in this codebase). (i)
+    `crafting:made`, `pottery:fired`,
+    `crafting:light-orb-made`, `crafting:gem-sickle-made`
+    emitted with no Go consumer. (j) CraftingSpells NOT
+    STARTED (separate members entry, blocked on
+    `onSpellCast` / `onSpellOnObject` — both table-only;
+    see the phase-44 plan §"Grounding — CraftingSpells").
+    (k) Sub-units unit-covered only, not observed live:
+    weaving, battlestaves, snelm, limestone, light orbs,
+    buttons, gem sickles, perfect jewellery (two-mould
+    prompt), amethyst, glassblowing, silver jewellery,
+    combine, hunters' pouches. (l) Port-site notes: no
+    `Api.EmitCanUseItem` passthrough (the jewellery
+    `emitCanUseItem(..., "craft")` gate is skipped);
+    the wheel object anim is sent to the spinning player
+    only; pottery/spinning station snapshots hold the
+    location only (no teleport serial / area — same gap
+    as 26(g)). (m) Full-inventory refusal cannot bite
+    for 1:1 Crafting recipes: `canGrantAfterConsumption`
+    previews after deleting the material, so the output
+    always fits in the freed slot (TS-faithful; the
+    smoke44 full-inventory leg's premise was corrected
+    live, not the engine). (n) Zenyte gem-cut XP is 50
+    in `crafting.json` (OSRS says 200) — ported as-is
+    per the verbatim-import rule.
 
 ## Next modules, in priority order
 
