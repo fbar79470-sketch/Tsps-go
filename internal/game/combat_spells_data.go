@@ -399,6 +399,34 @@ var effectSpellEntries = []effectSpellEntry{
 	{name: "VENGEANCE", id: 9136, level: 94, baseXP: 112.0, runes: []spellRune{{9075, 4}, {557, 10}, {560, 2}}, spellbook: SpellbookLunar, members: false, aliases: nil},
 }
 
+// enchantSpellEntries is the seven Lvl-1–7 Enchant spells
+// (Spells.EnchantJewellery.js:162-259, ENCHANT_SPELLS). They are
+// NOT EffectSpells statics — TS builds them as JewellerySpell
+// instances whose id is the cache spell widget id
+// (getSpellByName(name).widgetId) — so they live in their own
+// slice, registered as utility spells alongside the EffectSpells
+// table (same SpellCaster surface, same canCastSpell path).
+// The ids below are the cache widget ids, probe-verified against
+// the real rev-242 cache (GetSpellByName, 2026-11-21): Lvl-1
+// 14286864, Lvl-2 14286875, Lvl-3 14286888, Lvl-4 14286897,
+// Lvl-5 14286912, Lvl-6 14286925, Lvl-7 14286928. The cache's
+// GetSpellRequirements agrees with every TS level/rune row.
+// baseXP here IS the XP the cast pays (JewellerySpell.
+// baseExperience() returns the table's xp), unlike the
+// EffectSpells entries' dead values — but the handler pays its
+// own int-truncated XP, exactly as Superheat pays 53 while its
+// table carries 6544. Members follows TS (members = level >=
+// 68): Lvl-5, Lvl-6 and Lvl-7 only.
+var enchantSpellEntries = []effectSpellEntry{
+	{name: "LVL_1_ENCHANT", id: 14286864, level: 7, baseXP: 17.5, runes: []spellRune{{564, 1}, {555, 1}}, spellbook: SpellbookNormal, members: false, aliases: nil},
+	{name: "LVL_2_ENCHANT", id: 14286875, level: 27, baseXP: 37.0, runes: []spellRune{{564, 1}, {556, 3}}, spellbook: SpellbookNormal, members: false, aliases: nil},
+	{name: "LVL_3_ENCHANT", id: 14286888, level: 49, baseXP: 59.0, runes: []spellRune{{564, 1}, {554, 5}}, spellbook: SpellbookNormal, members: false, aliases: nil},
+	{name: "LVL_4_ENCHANT", id: 14286897, level: 57, baseXP: 67.0, runes: []spellRune{{564, 1}, {557, 10}}, spellbook: SpellbookNormal, members: false, aliases: nil},
+	{name: "LVL_5_ENCHANT", id: 14286912, level: 68, baseXP: 78.0, runes: []spellRune{{564, 1}, {555, 15}, {557, 15}}, spellbook: SpellbookNormal, members: true, aliases: nil},
+	{name: "LVL_6_ENCHANT", id: 14286925, level: 87, baseXP: 97.0, runes: []spellRune{{564, 1}, {554, 20}, {557, 20}}, spellbook: SpellbookNormal, members: true, aliases: nil},
+	{name: "LVL_7_ENCHANT", id: 14286928, level: 93, baseXP: 110.0, runes: []spellRune{{564, 1}, {565, 20}, {566, 20}}, spellbook: SpellbookNormal, members: true, aliases: nil},
+}
+
 // effectSpellFruitBones is EffectSpells.FRUIT_BONES
 // (EffectSpells.ts:19-21): the bones Bones to Bananas and Bones to
 // Peaches turn into fruit (unnoted only).

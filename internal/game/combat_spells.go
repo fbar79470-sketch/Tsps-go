@@ -223,6 +223,35 @@ type MagicUtilityEffectPayload struct {
 	Handled bool
 }
 
+// CombatFrozenEventName is the "combat:frozen" custom event
+// (Freezes.plugin.js, register): emitted when a freeze lands
+// on a target, so the Freezes consumer can send the red
+// message, warn before expiry, and release a player-applied
+// freeze when the two stray apart. TS emits it from
+// CombatFactory.freezeTicks itself
+// (CombatFactory.ts:1665); Go's FreezeTicks does not
+// (combat_factory.go: FreezeTicks comment), so the consumer
+// that applied the freeze emits it — the standard-bind
+// consumer in internal/content/standardeffects, and the
+// Ancient ice consumer for ice freezes.
+const CombatFrozenEventName = "combat:frozen"
+
+// CombatFrozenPayload is the "combat:frozen" event
+// (CombatFactory.ts:1665, freezeTicks): the frozen target, the
+// caster that froze it (or nil), the ticks applied, and the
+// freeze kind — "ice" for ice spells, "bind" for
+// Bind/Snare/Entangle.
+type CombatFrozenPayload struct {
+	// Target is the frozen character.
+	Target *Mobile
+	// Source is the caster that froze the target, or nil.
+	Source *Mobile
+	// Ticks is the freeze duration applied.
+	Ticks int
+	// Kind is "ice" or "bind".
+	Kind string
+}
+
 // MageArenaCapeReceivedPayload is the "mage-arena:cape-received"
 // event (ChargeSpell.cast, CombatSpells.ts:47-50): the Mage
 // Arena plugin answers whether the player holds a god cape.
@@ -1239,6 +1268,9 @@ func InstallStandardSpells() {
 			RegisterUtilitySpell(alias, entry)
 		}
 	}
+	for _, entry := range enchantSpells {
+		RegisterUtilitySpell(entry.entry.id, entry)
+	}
 }
 
 // uninstallStandardSpells removes every standard-book and
@@ -1256,6 +1288,9 @@ func uninstallStandardSpells() {
 		for _, alias := range entry.entry.aliases {
 			UnregisterUtilitySpell(alias)
 		}
+	}
+	for _, entry := range enchantSpells {
+		UnregisterUtilitySpell(entry.entry.id)
 	}
 }
 
@@ -1300,6 +1335,21 @@ var utilitySpells = func() []*utilitySpell {
 	out := make([]*utilitySpell, 0, len(effectSpellEntries))
 	for i := range effectSpellEntries {
 		out = append(out, newUtilitySpell(&effectSpellEntries[i]))
+	}
+	return out
+}()
+
+// enchantSpells are the Lvl-1–7 Enchant singletons, in table
+// order, built once from enchantSpellEntries
+// (combat_spells_data.go): the same utilitySpell surface as the
+// EffectSpells table, so the Enchant Jewellery handler casts
+// through canCastSpell exactly as Superheat does. Their ids are
+// the cache widget ids (TS JewellerySpell.id = widgetId), not
+// EffectSpells statics.
+var enchantSpells = func() []*utilitySpell {
+	out := make([]*utilitySpell, 0, len(enchantSpellEntries))
+	for i := range enchantSpellEntries {
+		out = append(out, newUtilitySpell(&enchantSpellEntries[i]))
 	}
 	return out
 }()

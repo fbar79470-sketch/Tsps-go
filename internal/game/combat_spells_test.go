@@ -212,13 +212,20 @@ func TestStandardSpellSpotRows(t *testing.T) {
 	if s := AutocastSpell(47); s == nil || s.SpellID() != 1539 {
 		t.Fatalf("autocast slot 47 = %v, want Iban Blast (1539)", s)
 	}
-	if s := AutocastSpell(31); s != nil {
-		t.Fatalf("autocast slot 31 = %v, want nil (Ancients not ported)", s.SpellID())
+	// Ancient slots resolve once the Ancient book registers
+	// (Phase 45); the Arceuus slots stay nil.
+	installAncientSpells(t)
+	if s := AutocastSpell(31); s == nil || s.SpellID() != 12939 {
+		t.Fatalf("autocast slot 31 = %v, want Smoke Rush (12939)", s)
+	}
+	if s := AutocastSpell(46); s == nil || s.SpellID() != 12891 {
+		t.Fatalf("autocast slot 46 = %v, want Ice Barrage (12891)", s)
 	}
 }
 
 func TestGetCombatSpellByName(t *testing.T) {
 	installStandardSpells(t)
+	installAncientSpells(t)
 	cases := []struct {
 		name string
 		id   int
@@ -238,8 +245,16 @@ func TestGetCombatSpellByName(t *testing.T) {
 			t.Fatalf("GetCombatSpellByName(%q) = %v, want id %d", c.name, spell, c.id)
 		}
 	}
-	if spell := GetCombatSpellByName("Smoke Rush"); spell != nil {
-		t.Fatalf("GetCombatSpellByName(Smoke Rush) = %v, want nil (Ancients not ported)", spell.SpellID())
+	// Ancient names resolve now that the book is ported
+	// (Phase 45): display and static forms alike.
+	if spell := GetCombatSpellByName("Smoke Rush"); spell == nil || spell.SpellID() != 12939 {
+		t.Fatalf("GetCombatSpellByName(Smoke Rush) = %v, want id 12939", spell)
+	}
+	if spell := GetCombatSpellByName("SMOKE_RUSH"); spell == nil || spell.SpellID() != 12939 {
+		t.Fatalf("GetCombatSpellByName(SMOKE_RUSH) = %v, want id 12939", spell)
+	}
+	if spell := GetCombatSpellByName("Ice Barrage"); spell == nil || spell.SpellID() != 12891 {
+		t.Fatalf("GetCombatSpellByName(Ice Barrage) = %v, want id 12891", spell)
 	}
 	if spell := GetCombatSpellByName("no such spell"); spell != nil {
 		t.Fatalf("GetCombatSpellByName(unknown) = %v, want nil", spell.SpellID())

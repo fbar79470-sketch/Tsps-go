@@ -685,3 +685,24 @@ func TestLogoutResponseSentBeforeClose(t *testing.T) {
 		t.Error("no LOGOUT_RESPONSE packet in recorded frames")
 	}
 }
+
+// TestServerStartHooksBeforeFirstTick is a race-regression test: the
+// server-startup hooks schedule work (TaskManager.Schedule from the
+// smithing and enchant-jewellery ensureTask hooks) while TaskManager
+// is tick-goroutine-owned and unsynchronised, so the hooks must run
+// before the engine's first tick. Before the fix (hooks emitted after
+// engine.Start) this test failed under -race with TaskManager.Process
+// vs Schedule (TestShutdownEngineDrivenSavesWalkedPosition,
+// 2026-11-22). It only bites under -race; without it, it just starts
+// and stops a fast-tick server.
+func TestServerStartHooksBeforeFirstTick(t *testing.T) {
+	srv := testServer(t, 5)
+	srv.Start()
+	deadline := time.Now().Add(2 * time.Second)
+	for srv.engine.TickCount() < 5 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if srv.engine.TickCount() < 5 {
+		t.Fatalf("TickCount = %d, want >= 5 (engine never ticked)", srv.engine.TickCount())
+	}
+}

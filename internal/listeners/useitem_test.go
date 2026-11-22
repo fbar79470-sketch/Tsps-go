@@ -444,18 +444,22 @@ func TestHandleInventoryUseOnItemDispatch(t *testing.T) {
 	}
 }
 
-func TestSpellOnObjectStaysDrop(t *testing.T) {
-	// Spell-on-object stays decode-drop even with the object
-	// seams wired: magic is NOT STARTED.
+func TestSpellOnObjectDispatches(t *testing.T) {
+	// Spell-on-object routes (phase 45): the opcode-2 dispatch
+	// reaches routeSpellOnObject instead of dropping. The test
+	// fake's lookup returns the entry for any id/tile, so even
+	// the all-zero payload walks to the object — the route acts
+	// and a walk starts. The lookup-miss refusal is pinned by
+	// TestSpellOnObjectRoute.
 	p := testPlayer()
 	entry := &fakeObjectEntry{id: 100, loc: game.Location{X: 3090, Y: 3524, Z: 0}, typ: 10}
 	deps, _, _ := objectTestDeps(entry, ObjectHooks{})
 	got := Handle(p, game.TurnPacket{Opcode: protocol.NativeOpLocT, Payload: zeros(15)}, 1, deps)
-	if got.Reason != ReasonUseItem {
-		t.Fatalf("spell-on-object = %+v, want ReasonUseItem", got)
+	if !got.Implemented {
+		t.Fatalf("spell-on-object = %+v, want Implemented (walk to object started)", got)
 	}
-	if p.MovementQueue().WalkToPending() {
-		t.Fatal("spell-on-object must not start a walk-to")
+	if !p.MovementQueue().WalkToPending() {
+		t.Fatal("spell-on-object must start a walk-to")
 	}
 }
 

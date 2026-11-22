@@ -438,6 +438,12 @@ func buildServer(opts Options) (*Server, error) {
 	// data above; with no spells registered every autocast
 	// slot would read nil.
 	game.InstallStandardSpells()
+	// Ancient spellbook (internal/game/combat_spells_ancient.go):
+	// registers the 16 Ancient combat spells by id and name, so
+	// GetCombatSpell resolves them and the autocast slots 31-46
+	// light up. Installs before the engine starts, like the
+	// standard book above.
+	game.InstallAncientSpells()
 	// Combat sources (see combatwiring.go): the world-backed
 	// cycle/clipping/multi/Wilderness sources, the combat_hits
 	// phase, NPC respawn + special-restore wiring, and the
@@ -601,15 +607,23 @@ func buildServer(opts Options) (*Server, error) {
 // Stop cancels it.
 //
 // The server-startup plugin hooks fire once, on the first Start,
-// after the engine starts (TS: emitServerStartup in GameBuilder,
-// after the game is built). A second Start restarts nothing and
-// emits nothing.
+// BEFORE the engine starts ticking (TS: emitServerStartup in
+// GameBuilder, after the game is built). The order matters:
+// startup hooks schedule work (TaskManager.Schedule, per-tick
+// registrations) and TaskManager is tick-goroutine-owned with no
+// synchronization — emitting after engine.Start let the first
+// tick race a hook's Schedule (reproduced 2026-11-22 in cmd/server
+// race runs: TaskManager.Process vs enchantjewellery.ensureTask's
+// Schedule during TestShutdownEngineDrivenSavesWalkedPosition).
+// Emitting first establishes happens-before: every startup-hook
+// write lands before the first tick reads it. A second Start
+// restarts nothing and emits nothing.
 func (s *Server) Start() {
 	first := !s.started.Swap(true)
-	s.engine.Start(context.Background())
 	if first && s.plugins != nil {
 		s.plugins.EmitServerStartup(&plugins.ServerLifecycleEvent{Timestamp: time.Now().UnixMilli()})
 	}
+	s.engine.Start(context.Background())
 }
 
 // Stop saves online players, halts the tick engine, flushes account

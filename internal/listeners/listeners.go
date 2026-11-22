@@ -981,18 +981,15 @@ func Handle(p *game.Player, pkt game.TurnPacket, cycle int64, deps Deps) Outcome
 		if worldInputPreamble(p, "spell_on_object", msg, deps) {
 			return noAction()
 		}
-		// Spell on object (magic NOT STARTED): decode-drop,
-		// but the click-run override is set first — the
-		// spell click is in INTERACTION_CLICKS
-		// (NetworkBuilder.ts:246-260), so TS sets the
-		// override in the preamble before dispatch. A nil
-		// player or queue keeps the pure drop.
-		if p != nil {
-			if q := p.MovementQueue(); q != nil {
-				q.SetClickRunOverride(game.ClickRunOverride(p.IsRunning(), msg.ModifierFlags))
-			}
-		}
-		return drop(ReasonUseItem)
+		// Spell on object (UseItemPacketListener.spellOnObject,
+		// UseItemPacketListener.ts:202-241): the route walks to
+		// the object, re-checks it still stands on arrival,
+		// and emits onSpellOnObject — the emit is the action,
+		// an unclaimed cast has no fallback. The click-run
+		// override is set inside the route (the
+		// INTERACTION_CLICKS preamble + the item-on-object
+		// precedent).
+		return routeSpellOnObject(p, msg, cycle, deps, drop, acted, noAction)
 	case protocol.ClientInventoryUseOn:
 		msg, err := protocol.DecodeInventoryUseOn(pkt.Payload)
 		if err != nil {
@@ -1531,9 +1528,13 @@ const mainInventoryGroupID = 149
 // (lines 988-992) are GAPs with no world-map system; they
 // are safe to skip because no world-map widget (group 595, or an
 // orbs-interface component) resolves an equipment slot. The
-// bank/prayer/spell branches (lines 1025-1089) are GAPs: every
+// bank/prayer branches (lines 1025-1089) are GAPs: every
 // handler reads a system that does not exist, so each would
 // return false and fall through to the inventory branch. The
+// spell branch in that range IS implemented (phase 45): the
+// onSpellCast emit runs after the autocast branch, then the
+// self-cast route (Charge only — other self-cast spells route
+// to NOT STARTED handlers). The
 // combat branches in that range ARE implemented (phase 26):
 // the auto-retaliate button and the style buttons route to
 // game.HandleAutoRetaliateButton / game.HandleStyleButton;
@@ -1639,7 +1640,9 @@ func routeWidgetAction(p *game.Player, msg protocol.WidgetAction, deps Deps, dro
 	// here), then the style buttons (593:6/10/14/18). A
 	// handled click claims the packet; anything else falls
 	// through to the inventory branch. The shop branch above
-	// and the bank/prayer/spell branches stay as documented.
+	// and the bank/prayer branches stay as documented; the
+	// spell branch is wired just below (the onSpellCast emit
+	// after the autocast branch, then the self-cast route).
 	if game.HandleAutoRetaliateButton(p, msg.GroupID, msg.ChildID) {
 		return finish(acted())
 	}
@@ -1652,6 +1655,31 @@ func routeWidgetAction(p *game.Player, msg protocol.WidgetAction, deps Deps, dro
 	// handler returns false for anything else, so the click
 	// falls through to the inventory branch.
 	if game.HandleAutocastWidgetAction(p, msg.GroupID, msg.ChildID, msg.Slot) {
+		return finish(acted())
+	}
+
+	// Spell-cast emit (NetworkBuilder.ts:1060, 1804-1812; phase
+	// 45): after the autocast branch, before the self-cast
+	// handlers. A claimed click is consumed; an unclaimed one
+	// falls through to the self-cast route below. opId is
+	// buttonNum ?? opId ?? 1.
+	opID := 1
+	if msg.HasButtonNum {
+		opID = msg.ButtonNum
+	} else if msg.HasOpID {
+		opID = msg.OpID
+	}
+	if emitSpellCast(deps, p, int(msg.WidgetID), msg.GroupID, msg.ChildID, msg.ItemID, opID) {
+		return finish(acted())
+	}
+
+	// Self-cast route (NetworkBuilder.ts:1073-1075): the
+	// spell's own handleSelf. SpellTeleports.handleSelf and
+	// LunarSpells.handleSelf have no Go form (no teleport
+	// system, Lunar not ported); CombatSpells.handleSelf is
+	// game.HandleSelfSpell, which today answers only Charge —
+	// other self-cast spells route to NOT STARTED handlers.
+	if name, ok := resolveSpellName(deps, int(msg.WidgetID), msg.GroupID, msg.ChildID, msg.ItemID); ok && game.HandleSelfSpell(p, name) {
 		return finish(acted())
 	}
 
@@ -1829,7 +1857,7 @@ func Statuses() []Status {
 		{
 			Listener: "MagicOnItemPacketListener",
 			Opcodes:  "94 (OPLOC_T_ALT, spell_on_ground) + 90 (IF_BUTTONT, spell on inventory item, shared with InterfaceActionClickOpcode)",
-			Action:   "implemented: Low/High Alchemy (levels 21/55, nature + fire runes with bypass/infinite-staff filtering, spell-disabled gate, coin payment from alchemy values, 3/5-tick pacing with queue, Magic XP 31/65, click-run override) and Telekinetic Grab (level 33, law + air runes, range 10 with walk-to approach, inventory capacity, delayed landing through the task seam, Magic XP 43, click-run override); gaps: other EffectSpells (Superheat, Bones to Bananas/Peaches, Bake Pie, Vengeance) and the Arceuus reanimations route to NOT STARTED handlers, spell-on-object (opcode 2) NOT STARTED, alchemy confirm dialogue for untradeable items (warning sent, cast refused), 500ms click delay, animations/graphics/projectile/sounds, endSpellbookSwap, sendTab(6)",
+			Action:   "implemented: Low/High Alchemy (levels 21/55, nature + fire runes with bypass/infinite-staff filtering, spell-disabled gate, coin payment from alchemy values, 3/5-tick pacing with queue, Magic XP 31/65, click-run override) and Telekinetic Grab (level 33, law + air runes, range 10 with walk-to approach, inventory capacity, delayed landing through the task seam, Magic XP 43, click-run override); gaps: other EffectSpells (Superheat, Bones to Bananas/Peaches, Bake Pie, Vengeance) and the Arceuus reanimations route to NOT STARTED handlers, spell-on-object (opcode 2) routes to onSpellOnObject (phase 45; the emit is the action, no fallback), alchemy confirm dialogue for untradeable items (warning sent, cast refused), 500ms click delay, animations/graphics/projectile/sounds, endSpellbookSwap, sendTab(6)",
 		},
 		{
 			Listener: "MagicOnPlayerPacketListener",

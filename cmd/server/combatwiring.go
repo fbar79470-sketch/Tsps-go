@@ -74,7 +74,9 @@ import (
 // the timer and colour). InstallDeathWiring populates two more
 // world-backed seams: DropGroundItem (the bones + drops spawn,
 // shared with the ammo-drop seam) and RequestSave (the
-// "death"/"respawn" save requests). The remaining fields stay
+// "death"/"respawn" save requests). InstallCombatSources
+// populates one more: SpellAreaTargets (the barrage
+// secondary-target list, Phase 45). The remaining fields stay
 // unset (the zero seam is inert; combat code checks every field
 // for nil) because their hub families stay table-only this
 // phase — OnNpcBeforeDeath, OnPlayerBeforeDeath,
@@ -84,8 +86,7 @@ import (
 // PrayerDisabled, ModifyMagicMaxHit, ModifyMagicHitBounds,
 // ModifyRangedMaxHit, ModifyDefenceRoll, ModifyAccuracyOutcome,
 // AccuracyScale, OnPlayerRespawn, QueueDelayedDamage,
-// AreaAttackTargets, SpellAreaTargets, and
-// RetaliationHomeCheck. (OnCombatHitRolled is a custom event —
+// AreaAttackTargets, and RetaliationHomeCheck. (OnCombatHitRolled is a custom event —
 // combat:hit-rolled — not one of the 108 hook families, so it
 // has no hub registration surface at all.)
 //
@@ -437,6 +438,35 @@ func InstallCombatSources(world *game.World, wilderness *game.Wilderness) {
 		game.SetCombatWildernessSource(func(loc game.Location) (bool, bool) {
 			return wilderness.IsInLocation(loc), wilderness.IsInSafeBuilding(loc)
 		})
+	}
+	// Barrage secondaries (Phase 45): the world-backed
+	// area-target list behind Hooks.SpellAreaTargets
+	// (MagicCombatMethod.hits). TS draws from the caster's
+	// local players/NPCs (player caster) or the world near
+	// the target (NPC caster, World.getNpcsNear); Go has no
+	// local lists, so the adapter scans the world's players
+	// and NPCs and keeps only the mobiles within radius of
+	// the primary target. CanAttackSecondaryTarget re-checks
+	// radius, multi-combat and policy, so this is a
+	// candidate list, not the verdict — the scan is the
+	// same shape as the findCombatNPC/findCombatPlayer
+	// fallback scans above.
+	game.Hooks.SpellAreaTargets = func(attacker, target *game.Mobile, radius int) []*game.Mobile {
+		if target == nil {
+			return nil
+		}
+		var out []*game.Mobile
+		for _, p := range world.Players().All() {
+			if p != nil && p.Location().IsWithinDistance(target.Location(), radius) {
+				out = append(out, &p.Mobile)
+			}
+		}
+		for _, n := range world.NPCs().All() {
+			if n != nil && n.Location().IsWithinDistance(target.Location(), radius) {
+				out = append(out, &n.Mobile)
+			}
+		}
+		return out
 	}
 	// The combat_hits world phase sweeps hit queues for
 	// entities that did not process their own this tick; the

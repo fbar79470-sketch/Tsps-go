@@ -71,9 +71,11 @@ func (s autocastFakeSpell) SpellID() int { return s.id }
 // (notably TestCombatSpellRegistry, which expects unknown names
 // to resolve to nil — installing the real standard spells here
 // would break it). The names are test-only and never collide
-// with real spell names. Ancient (31-46) and Arceuus (53-58)
-// ids stay unregistered on purpose: those books have not
-// landed, and AutocastSpell must read nil for them.
+// with real spell names. Ancient (31-46) ids stay unregistered
+// here because the real Ancient table installs them
+// (installAncientSpells, Phase 45); Arceuus (53-58) ids stay
+// unregistered because that book has not landed, and
+// AutocastSpell must read nil for them.
 func registerAutocastTestSpells(t *testing.T) {
 	t.Helper()
 	for slot, id := range autocastSpellIDs {
@@ -103,10 +105,14 @@ func autocastPlayer(t *testing.T) (*Player, *autocastFakeSession) {
 func TestAutocastSpellResolution(t *testing.T) {
 	// The standard spells register through
 	// registerAutocastTestSpells (test fakes under the real
-	// autocast ids; see the helper above).
+	// autocast ids; see the helper above). The Ancient book
+	// registers for real (Phase 45), so its slots resolve;
+	// the Arceuus slots stay nil until that book lands.
 	registerAutocastTestSpells(t)
+	installAncientSpells(t)
 	// Standard slots resolve through the registry (Worker A);
-	// ancient/arceuus slots read nil until their books land;
+	// ancient slots resolve through the Ancient table;
+	// arceuus slots read nil until their book lands;
 	// unlisted slots read nil.
 	if spell := AutocastSpell(1); spell == nil {
 		t.Fatal("AutocastSpell(1) = nil, want Wind Strike")
@@ -120,7 +126,13 @@ func TestAutocastSpellResolution(t *testing.T) {
 	if spell := AutocastSpell(47); spell == nil {
 		t.Fatal("AutocastSpell(47) = nil, want Iban Blast")
 	}
-	for _, slot := range []int{31, 46, 53, 58} {
+	if spell := AutocastSpell(31); spell == nil || spell.SpellID() != 12939 {
+		t.Fatalf("AutocastSpell(31) = %v, want Smoke Rush (12939)", spell)
+	}
+	if spell := AutocastSpell(46); spell == nil || spell.SpellID() != 12891 {
+		t.Fatalf("AutocastSpell(46) = %v, want Ice Barrage (12891)", spell)
+	}
+	for _, slot := range []int{53, 58} {
 		if spell := AutocastSpell(slot); spell != nil {
 			t.Fatalf("AutocastSpell(%d) = %v, want nil (book not landed)", slot, spell)
 		}

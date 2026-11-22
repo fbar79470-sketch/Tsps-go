@@ -246,8 +246,8 @@ func queueMagicImpactGraphic(hit *PendingHit) {
 			visual.soundQueued = true
 		}
 	}
-	def := standardSpellDefOf(spell)
-	if def == nil {
+	id, height, ok := spellEndGraphic(spell)
+	if !ok {
 		return
 	}
 	// The graphic counts as queued only when the delayed
@@ -262,9 +262,7 @@ func queueMagicImpactGraphic(hit *PendingHit) {
 	// A spell with no end graphic plays nothing and stays
 	// unqueued, as in TS.
 	if hit.IsAccurate() {
-		if def.endGraphic >= 0 {
-			visual.queued = hit.Target().PerformGraphic(def.endGraphic, spellEndGraphicHeight(spell), visual.endCycleOffset)
-		}
+		visual.queued = hit.Target().PerformGraphic(id, height, visual.endCycleOffset)
 	} else {
 		visual.queued = hit.Target().PerformGraphic(splashGraphicID, graphicHeightMiddle, visual.endCycleOffset)
 	}
@@ -396,8 +394,8 @@ func magicImpactPresentation(hit *PendingHit, spell CombatSpell) {
 	queuedGraphic := visual != nil && visual.queued
 	queuedSound := visual != nil && visual.soundQueued
 	if hit.IsAccurate() {
-		if def := standardSpellDefOf(spell); def != nil && def.endGraphic >= 0 && !queuedGraphic {
-			target.PerformGraphic(def.endGraphic, spellEndGraphicHeight(spell), 0)
+		if id, height, ok := spellEndGraphic(spell); ok && !queuedGraphic {
+			target.PerformGraphic(id, height, 0)
 		}
 		if !queuedSound {
 			// The impact sound (MagicCombatMethod.ts:366-369):

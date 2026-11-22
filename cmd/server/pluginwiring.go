@@ -17,6 +17,7 @@ import (
 	_ "tsps-go/internal/content/cooking"
 	_ "tsps-go/internal/content/crafting"
 	_ "tsps-go/internal/content/dateminutes"
+	_ "tsps-go/internal/content/enchantjewellery"
 	_ "tsps-go/internal/content/fishing"
 	_ "tsps-go/internal/content/fletching"
 	_ "tsps-go/internal/content/gracefuloutfit"
@@ -25,6 +26,7 @@ import (
 	_ "tsps-go/internal/content/seekingarrows"
 	_ "tsps-go/internal/content/shopkeepers"
 	_ "tsps-go/internal/content/smithing"
+	_ "tsps-go/internal/content/standardeffects"
 	_ "tsps-go/internal/content/wildernessditch"
 	_ "tsps-go/internal/content/woodcutting"
 	_ "tsps-go/internal/content/wornweights"
@@ -87,6 +89,7 @@ func newPluginHub(worldDef *config.World, logger *log.Logger, defs *cache.CacheD
 	if err := installSmithingTables(worldDef, defs); err != nil {
 		return nil, err
 	}
+	installEnchantJewellery(worldDef)
 	hub.Load()
 	return hub, nil
 }

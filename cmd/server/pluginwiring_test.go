@@ -18,23 +18,28 @@ func TestNewPluginHubLoadsCompiledInContent(t *testing.T) {
 	// (phase 38, no members flag) loads first, then BankBooths
 	// (phase 46, no members flag — F2P), then DateMinutes
 	// (phase 10), LumbridgeGuide (phase 23, no members flag),
-	// Shopkeepers (phase 41, no members flag), WildernessDitch
-	// (phase 40, no members flag), WornWeights (phase 22), and
-	// Woodcutting (phase 32, no members flag) load, and Fishing
-	// (phase 35, no members flag — F2P) loads between WornWeights
-	// and Woodcutting. Woodcutting loads after WornWeights in
-	// the observed load order (Go init order, not the order of
-	// the blank imports in pluginwiring.go). Mining (phase 42,
-	// no members flag — F2P) loads between Fishing and
-	// Woodcutting. Cooking (phase 36, no members flag — F2P)
-	// loads after Woodcutting. Crafting (phase 44, no members
-	// flag — F2P) loads between Cooking and Smithing.
+	// Shopkeepers (phase 41, no members flag), the phase-45
+	// standard-book effects (Standard Bindings, Standard Curses,
+	// Freezes, TeleBlock, ElementalStaves, no members flags)
+	// load between Shopkeepers and WildernessDitch (phase 40,
+	// no members flag), WornWeights (phase 22), Enchant
+	// Jewellery (phase 45, no members flag — F2P) between
+	// WornWeights and Fishing, and Woodcutting (phase 32, no
+	// members flag). Fishing (phase 35, no members flag — F2P)
+	// loads between EnchantJewellery and Mining. Woodcutting
+	// loads after WornWeights in the observed load order (Go
+	// init order, not the order of the blank imports in
+	// pluginwiring.go). Mining (phase 42, no members flag —
+	// F2P) loads between Fishing and Woodcutting. Cooking
+	// (phase 36, no members flag — F2P) loads after
+	// Woodcutting. Crafting (phase 44, no members flag — F2P)
+	// loads between Cooking and Smithing.
 	hub, err := newPluginHub(&config.World{}, log.Default(), nil)
 	if err != nil {
 		t.Fatalf("newPluginHub: %v", err)
 	}
 	loaded := hub.Loaded()
-	want := []string{"AdminCommands", "BankBooths", "DateMinutes", "LumbridgeGuide", "Shopkeepers", "WildernessDitch", "WornWeights", "Fishing", "Mining", "Woodcutting", "Cooking", "Crafting", "Smithing"}
+	want := []string{"AdminCommands", "BankBooths", "DateMinutes", "LumbridgeGuide", "Shopkeepers", "Standard Bindings", "Standard Curses", "Freezes", "TeleBlock", "ElementalStaves", "WildernessDitch", "WornWeights", "EnchantJewellery", "Fishing", "Mining", "Woodcutting", "Cooking", "Crafting", "Smithing"}
 	if len(loaded) != len(want) {
 		t.Fatalf("Loaded() = %v, want %v", loaded, want)
 	}
@@ -52,12 +57,17 @@ func TestNewPluginHubLoadsMembersContentOnMembersWorld(t *testing.T) {
 	// (members: true, SeekingArrows.plugin.js, phase 24)
 	// between LumbridgeGuide and WornWeights; Shopkeepers
 	// (phase 41, no members flag) loads between SeekingArrows
-	// and WildernessDitch; WildernessDitch (phase 40, no
-	// members flag) loads between Shopkeepers and WornWeights;
-	// Fletching (members: true, phase 34) loads between
-	// WornWeights and Woodcutting; Fishing (phase 35, no members
-	// flag — F2P) loads between WornWeights and Fletching, and
-	// Woodcutting (phase 32, no members flag) loads before
+	// and the phase-45 standard-book effects (Standard
+	// Bindings, Standard Curses, Freezes, TeleBlock,
+	// ElementalStaves, no members flags), which load between
+	// Shopkeepers and WildernessDitch; WildernessDitch (phase
+	// 40, no members flag) loads between the standard-book
+	// effects and WornWeights; EnchantJewellery (phase 45, no
+	// members flag — F2P) loads between WornWeights and
+	// Fishing; Fletching (members: true, phase 34) loads
+	// between Fishing and Mining; Fishing (phase 35, no members
+	// flag — F2P) loads between EnchantJewellery and Fletching,
+	// and Woodcutting (phase 32, no members flag) loads before
 	// Cooking (phase 36, no members flag — F2P). Mining (phase
 	// 42, no members flag — F2P) loads between Fletching and
 	// Woodcutting. Smithing (phase 43, no members flag — F2P)
@@ -72,7 +82,7 @@ func TestNewPluginHubLoadsMembersContentOnMembersWorld(t *testing.T) {
 		t.Fatalf("newPluginHub: %v", err)
 	}
 	loaded := hub.Loaded()
-	want := []string{"AdminCommands", "BankBooths", "DateMinutes", "GracefulOutfit", "LumbridgeGuide", "SeekingArrows", "Shopkeepers", "WildernessDitch", "WornWeights", "Fishing", "Fletching", "Mining", "Woodcutting", "Cooking", "Crafting", "Smithing"}
+	want := []string{"AdminCommands", "BankBooths", "DateMinutes", "GracefulOutfit", "LumbridgeGuide", "SeekingArrows", "Shopkeepers", "Standard Bindings", "Standard Curses", "Freezes", "TeleBlock", "ElementalStaves", "WildernessDitch", "WornWeights", "EnchantJewellery", "Fishing", "Fletching", "Mining", "Woodcutting", "Cooking", "Crafting", "Smithing"}
 	if len(loaded) != len(want) {
 		t.Fatalf("Loaded() = %v, want %v", loaded, want)
 	}
@@ -90,8 +100,12 @@ func TestNewPluginHubSwitchDisablesDateMinutes(t *testing.T) {
 	// Crafting, Woodcutting, Fishing, Mining, Cooking and Smithing (no switches)
 	// still load (AdminCommands first; BankBooths second, between
 	// AdminCommands and LumbridgeGuide; Shopkeepers between
-	// LumbridgeGuide and WildernessDitch; Fishing between WornWeights
-	// and Woodcutting; Smithing last, after Crafting);
+	// LumbridgeGuide and the phase-45 standard-book effects
+	// (Standard Bindings, Standard Curses, Freezes, TeleBlock,
+	// ElementalStaves), which load between Shopkeepers and
+	// WildernessDitch; EnchantJewellery between WornWeights and
+	// Fishing; Fishing between EnchantJewellery and Mining;
+	// Smithing last, after Crafting);
 	// GracefulOutfit stays gated out of the free world.
 	// Crafting loads between Cooking and Smithing.
 	var buf bytes.Buffer
@@ -99,8 +113,8 @@ func TestNewPluginHubSwitchDisablesDateMinutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newPluginHub: %v", err)
 	}
-	if loaded := hub.Loaded(); len(loaded) != 12 || loaded[0] != "AdminCommands" || loaded[1] != "BankBooths" || loaded[2] != "LumbridgeGuide" || loaded[3] != "Shopkeepers" || loaded[4] != "WildernessDitch" || loaded[5] != "WornWeights" || loaded[6] != "Fishing" || loaded[7] != "Mining" || loaded[8] != "Woodcutting" || loaded[9] != "Cooking" || loaded[10] != "Crafting" || loaded[11] != "Smithing" {
-		t.Fatalf("Loaded() = %v, want [AdminCommands BankBooths LumbridgeGuide Shopkeepers WildernessDitch WornWeights Fishing Mining Woodcutting Cooking Crafting Smithing]", loaded)
+	if loaded := hub.Loaded(); len(loaded) != 18 || loaded[0] != "AdminCommands" || loaded[1] != "BankBooths" || loaded[2] != "LumbridgeGuide" || loaded[3] != "Shopkeepers" || loaded[4] != "Standard Bindings" || loaded[5] != "Standard Curses" || loaded[6] != "Freezes" || loaded[7] != "TeleBlock" || loaded[8] != "ElementalStaves" || loaded[9] != "WildernessDitch" || loaded[10] != "WornWeights" || loaded[11] != "EnchantJewellery" || loaded[12] != "Fishing" || loaded[13] != "Mining" || loaded[14] != "Woodcutting" || loaded[15] != "Cooking" || loaded[16] != "Crafting" || loaded[17] != "Smithing" {
+		t.Fatalf("Loaded() = %v, want [AdminCommands BankBooths LumbridgeGuide Shopkeepers Standard Bindings Standard Curses Freezes TeleBlock ElementalStaves WildernessDitch WornWeights EnchantJewellery Fishing Mining Woodcutting Cooking Crafting Smithing]", loaded)
 	}
 	if !strings.Contains(buf.String(), "disabled=") {
 		t.Errorf("hub log %q does not report the disabled plugin", buf.String())
