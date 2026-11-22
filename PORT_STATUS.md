@@ -8,13 +8,15 @@ findings) lives outside this repository; status values below mean:
 ported, gaps listed), **NOT STARTED** (absent — nothing here
 pretends otherwise).
 
-Last updated: 2026-11-22 (phase 47 run: NPC dialogs — Talk-to
-bindings: `Predecessors` filled from the transcribed retired-NPC
-table (12 mappings), id-index resolution proven with fixtures +
-live-verified with a smoke-root overlay, name/alias fallback
-live-verified on 6 Lumbridge NPCs. The real
-`npc-dialogue-index.json` import still needs Tyler's approval
-(see gap 30). 5,134 tests passing, 30 packages. Quests are
+Last updated: 2026-11-22 (phase 48 run: Working doors — the door
+mechanism (catalog + toggle engine + pass-through gates +
+`crossingFor`) in `internal/content/doors`, live-verified on four
+Lumbridge legs (single/double/wooden-gate/kitchen: leaves swap on
+the wire, players walk through, doors re-block). One live-found
+wiring bug fixed in-phase (the engine captured nil hub surfaces at
+Register; now resolved lazily) and one genuine engine defect carried
+forward (a Close in the first tick after login loses the open leaf's
+LOC_DEL — see gap 31). 5,182 tests passing, 31 packages. Quests are
 postponed per Tyler's 2026-11-16 instruction (Doric's Quest
 picked but deferred); Tyler decided 2026-11-17: combat leftovers
 first, then adding all skills — see "Next modules".)
@@ -280,6 +282,85 @@ first, then adding all skills — see "Next modules".)
   gap 30): Talk-to on Banker 1613 at (3088,3242) fails with
   "I can't reach that!" — the counter branch does not fire
   from the west-side tile.
+- Phase 48 (`go build ./...`, `go vet ./...`, `gofmt -l .`:
+  clean. `CGO_ENABLED=0 go build ./...`: clean. 877 `.go`
+  files, 31 packages (new `internal/content/doors`; no new
+  hub family — 63/108 firable, unchanged; the existing
+  `OnObjectInteractionNamed` / `OnObjectRoute` families
+  cover doors, and the `door:toggle` / `door:open` /
+  `door:state` custom events are the consumer seam).
+- Phase 48 `go test ./... -p 1 -count=1 -v`: all 31 packages
+  pass (5,182 passing test cases: 3,963 top-level + 1,219
+  subtests, 0 failures, 0 skips — 5,134 from phase 47 + 48
+  new, all in `internal/content/doors`: 16 catalog, 22
+  engine, 9 pass-through, 1 walldoor `TestCrossingFor`).
+- Phase 48 `go test -race ./...`: clean on the first full
+  run (exit 0, 0 DATA RACE warnings, 31/31 packages ok).
+  No known-flake re-runs needed this phase.
+- Live phase-48 smoke tests (throwaway harness in
+  `/home/hatch/smoke48/`, four legs driving a real WebSocket
+  client against the real server binary + real rev-242 cache
+  from a temp root outside the repo; legs run singly, all
+  four PASS on run 2): single PASS (Open 1535 at
+  (3225,3240,0) face 2: ADD 1536 at (3226,3240,0) rot 3 +
+  DEL at (3225,3240) rot 2, sound 62; walk to (3226,3240);
+  Close 1536: ADD 1535 at (3225,3240) rot 2, sound 60;
+  walk into the doorway from the far side refused),
+  double PASS (Open 1521 at (3244,3216,0): ADD 1522 at
+  (3244,3215) rot 2 + ADD 1525 at (3243,3215) rot 0, DELs
+  at (3244,3216) + (3243,3216) rot 3, sound 62; walk to
+  (3244,3215); Close: ADD 1521 + ADD 1524, sound 60),
+  wooden-gate PASS (Open 12986 at (3213,3261,0): ADD 12988
+  at (3212,3261) rot 3 + ADD 12989 at (3211,3261) rot 3,
+  DELs at (3213,3261) + (3213,3262) rot 0, sound 67
+  gate-open; walk to (3212,3261); Close: ADD 12986 +
+  ADD 12987, sound 66 gate-close), kitchen PASS (Open
+  12348 at (3207,3217,0) face 1: ADD **1544** at (3207,3218)
+  rot 2 — the override case, not id+1 — + DEL at
+  (3207,3217) rot 1, sound 62; walk to (3207,3217)).
+  Run 1 of the same legs failed 0-for-4 and found the bug
+  below; run 2 re-ran on the fixed engine. Two harness
+  premises were corrected live, not the engine: (a) the
+  closed leaf is NOT in the login snapshot — upstream
+  `ObjectManager.onRegionChange` skips base-map objects
+  (`ObjectManager.ts:230-232`, `matchesBaseMapObject`), so
+  swaps are verified via post-click LOC_ADD_CHANGE (134) /
+  LOC_DEL (135) deltas only; (b) the doubleclick prediction
+  (click 1535 twice, second click re-closes) is invalid
+  after a real open — 1535 no longer exists at (3225,3240),
+  so the second click correctly targets a non-existent loc
+  and is ignored; the real close-click is on the open leaf
+  1536. LIVE-FOUND WIRING BUG, fixed in-phase: the doors
+  engine captured `api.GetObjectManager()` and
+  `api.GetTaskManager()` at Register time, but Register
+  runs inside `newPluginHub` (`cmd/server/server.go:185`)
+  while `hub.SetObjectManager` runs at :411 and the
+  TaskManager arrives with `InstallSkillHooks` at :469 —
+  both were nil live, so every swap nil-guarded away while
+  the sound still played (the gate leg was silent
+  throughout: the partner lookup bailed on nil objects
+  before the sound). Fix (the Phase 32 hub contract —
+  surfaces installed after Load must be resolved lazily,
+  never captured in Register): `resolveObjects` /
+  `resolveTasks` closures on the engine, resolved per use
+  (`objectManager()` / `taskManager()` in
+  `internal/content/doors/doors.go`), caching only non-nil
+  results; all 20 direct `e.objects` / `e.tasks` uses in
+  `doors.go` + `passthrough.go` converted; regression test
+  `TestLazySurfaceResolution`. Reordering boot was not an
+  option: the object manager needs `world.GameObjects()`,
+  which does not exist until after hub load. LIVE-FOUND
+  ENGINE DEFECT, carried forward (see gap 31): a Close
+  clicked in the first tick after login silently loses the
+  open leaf's LOC_DEL (reproduced deterministically, single
+  S3 twice + double S3 once); `FlushTick` drains deltas
+  before the first tick's `OnRegionChange` snapshot and
+  before `hasReplayedScene` is set, so the removal delta is
+  dropped while the snapshot re-sends the closed leaf ADD.
+  Server-side state is correct throughout; real-client
+  impact assessed as likely nil (the real client rebuilds
+  its scene from cache on login) but unproven on the real
+  client.
 - Phase 44 (`go build ./...`, `go vet ./...`, `gofmt -l .`:
   clean. `CGO_ENABLED=0 go build ./...`: clean. 835 `.go`
   files, 27 packages (new `internal/content/crafting`, 26
@@ -1160,18 +1241,26 @@ first, then adding all skills — see "Next modules".)
   upstream, `f50b9906...`, 45,911,508 bytes, 3,374 speaker
   records) — the Go loader already existed from Phase 14
   (`internal/definition/dialogue.go`, `LoadDialogueData`):
-  load-proven by test, 3,374 records, 0 index ids (the
-  `npc-dialogue-index.json` file is still the empty
-  starter). The placeholder test that asserted the files
-  were empty starters (`TestDialogueStarterFilesValid`) was
-  replaced by `TestDialogueFilesValid`, which asserts the
-  imported catalogue loads with the expected counts. The
-  file stays verbatim; the Talk-to bindings landed in
+  load-proven by test, 3,374 records. The companion
+  `npc-dialogue-index.json` (NPC id → transcript pages)
+  was imported verbatim 2026-11-22 on Tyler's approval
+  (widget tap "Import the dialogue index file", SHA-256
+  verified identical to upstream, `0e66e4c4...`,
+  4,782,584 bytes, 7,438 NPC ids / 12,450 page entries) —
+  load-proven by test (`TestDialogueFilesValid` asserts
+  3,374 records and 7,438 index ids; id 306 resolves to
+  "Lumbridge Guide"), so the id-index path now works with
+  the real data and no code change. The placeholder test
+  that asserted the files were empty starters
+  (`TestDialogueStarterFilesValid`) was replaced by
+  `TestDialogueFilesValid`, which asserts the imported
+  catalogue loads with the expected counts. Both files
+  stay verbatim; the Talk-to bindings landed in
   phase 47 (`Predecessors` filled, id-index path proven with
   fixtures + live-verified with a smoke-root overlay,
   name/alias fallback live-verified on 6 Lumbridge NPCs —
-  see the phase-47 paragraph and gap 30 for the remaining
-  index import). The same applies to
+  see the phase-47 paragraph; gap 30(a) is now closed by
+  the index import). The same applies to
   `data/definitions/bank-space.json` (bank capacity curve +
   buy-slots dialogue — capacity, slotsPerBlock, blockCosts,
   banker menu, dialogue), imported verbatim 2026-11-21 on
@@ -1214,7 +1303,7 @@ first, then adding all skills — see "Next modules".)
 | P2 | Interface runtime: `Player` interface id, `PacketSender` interface mounts, `InterfaceLayoutRegistry`, `InterfaceActionClickOpcode`, entered-amount/syntax prompts, the live varp/varbit store | `internal/game` (interface id + close gate, entered actions), `internal/session` (mount tracking + sender surface, varp store), `internal/definition` (layout open dispatch), `internal/listeners` (action dispatch, prompt answers, close case), `internal/plugins` (interface families), `cmd/server` (wiring) | DONE (phase 18, live-verified: interface open/close/layering + close-on-movement/logout/death + layout open dispatch on all 7 surfaces + action dispatch to hub hooks with prompt-first order + entered-amount/syntax prompts + varp/varbit store with change detection, varbit packing, and replay; session-only, nothing persists; `VarManager` transform plumbing, `registerCustomInterface`, bank interface flows, and the per-player vars seam are gaps — see notes) |
 | P2 | Clans/social: `PlayerRelations`, social-packet dispatch, friends-chat-snapshot + clan encoders | `internal/game` (relations, names, chat gate), `internal/protocol` (social decoders/encoders), `internal/session` (social senders), `internal/listeners` (social dispatch), `internal/persist` (relations ownership), `internal/plugins` (social-packet variants), `cmd/server` (wiring) | DONE (phase 19, live-verified: whole `PlayerRelations` port + live chat gate + all 8 social-packet kinds emitted to the hub + snapshot/clan encoders + relations owned save state + logout presence-offline; friends-chat channels + the clan system are plugin content (FriendsList/Clans, NOT ported — the engine unlocks them); the legacy friend/ignore presence sends are no-ops, exactly as in TS (`PlayerSession.write` is a no-op upstream) — live presence comes from the snapshot, which content sends; chat modes session-only — see notes) |
 | P3 | Plugin hub: `PluginManager`, `PluginTypes` | `internal/plugins` + `cmd/server` (`pluginwiring.go`) | DONE (compile-time registry, dependency-ordered loading, config-declaration validation, world.json switches, members-gating, lifecycle + custom-event + command/social-packet + object-interaction + dialogue + zone + combat + shop/trade + interface + skills + world-entity-interaction hooks with per-hook error isolation, gate contracts, scoped core surface, login extensions; the social-packet family fires all 8 kinds since phase 19 (same family, not a new one — the count is unchanged); onCanAttack became firable in phase 26; onSpellDisabled + onSpellRuneBypass became firable in phase 27; onShouldDropItemsOnDeath + onShouldKeepItemOnDeath + onPlayerDefeated + onPlayerDeathItemDrop + onPlayerDeathDrops became firable in phase 28 (51 of 108); the onItemAction family became firable in phase 32 (onItemAction/onItemActionNamed/onItemFirstAction/onCanUseItem, 54 of 108); the onNpcClick family became firable in phase 33 (onNpcClick, with the NPC remains-delay + transform seams in the death flow) and the onItemOnItem family became firable in phase 33 (onItemOnItem/onItemOnItemNamed, riding INVENTORY_USE_ON kind 4 — there is no separate item-on-item opcode), and the onNpcInteraction family became firable in phase 35 (onNpcInteraction, name hooks after the onNpcClick bindings — TS order, `NPCOptionPacketListener.ts:122/:132` — with the `DefinitionName`/`Action`/`Actions` fields on the hub event; `OnNpcsInteraction`/`OnBeforeNpcInteraction`/`OnNpcRoute` stay table-only), and the onAnyNpcInteraction family became firable in phase 41 (onAnyNpcInteraction, the generic list last after the name hooks — TS order, `PluginManager.ts:1246-1263` — with `Hub.AddNpcClickHook`/`Hub.AddAnyNpcInteractionHook` engine installs that bypass the load seal so Shopkeepers bindings can be installed post-Load; `OnNpcsInteraction`/`OnBeforeNpcInteraction`/`OnNpcRoute` stay table-only), and the onSpellOnItem family became firable in phase 43 (onSpellOnItem, fired from castSpellOnItem in the MagicOnItem listener through the listeners' `SpellHooks.EmitSpellOnItem` seam wired in spellwiring.go; Superheat Item is its first consumer), 59 of 108; the onButtonClick + onButton families became firable in phase 46 (fired by Hub.EmitButtonClick from the widget-action fallthrough's simple-click fallback; the Bank content is the first consumer), and the onSpellCast + onSpellOnObject families became firable in phase 45 (fired through the listeners' SpellHooks seams — wired in the paused Magic work, live-verified in the phase-45 resume via smoke45 leg (a)), 63 of 108; 45 of 108 hook families have no registration method yet — documented in the unfired-family table with the missing system named — and 29 of 95 non-hook members are ported, and 12 of 191 Core members — see notes; hub-count correction in phase 31: earlier versions of this document said 53/108, counting registration *methods* as *families* — Go has 63 `Api.On*` methods but four are named overloads of already-counted families (`OnObjectInteractionNamed`, `OnItemOnObjectNamed`, `OnItemActionNamed`, `OnItemOnItemNamed`), so 63 distinct families are firable (67 methods) and 45 are table-only; `hooks.go`'s header says sixty-three (updated in phase 46; the phase-35 plan's "5 named overloads" was wrong — recount: exactly 4 `*Named` methods). The +4 since phase 43 split two and two: Bank (phase 46) made `onButtonClick` + `onButton` firable (fired by Hub.EmitButtonClick from the widget-action fallthrough's simple-click fallback), and Magic (phase 45) made `onSpellCast` + `onSpellOnObject` firable (wired through the listeners' SpellHooks seams — the emit sites were missing until the phase-45 integration fixed them live; see the phase-45 paragraph) |
-| P3 | All `plugins/` content (2,907 JS files, 789,355 lines) | Go packages under `internal/content/` | PARTIAL (23 of 577 entries ported: DateMinutes (phase 10), GracefulOutfit + WornWeights (phase 22), LumbridgeGuide (phase 23), SeekingArrows (phase 24), Woodcutting (phases 32–33 — core loop + all sub-units except the Guild, which needs Tyler's `woodcutting-guild.json` import approval), Fletching (phase 34 — full skill: Shared loop, Recipes, Spool, Diaries, CreationMenu seam, all live-verified), Fishing (phase 35 — core loop + 8 of 10 sub-units, MinnowPlatform / Gita exchange / Guild door deferred, live-verified in 4 modes), Cooking (phase 36 — full skill: Cookers, Recipes, Wine, Churn, SacredEel, LeapingFish, Gnome, live-verified on fire/range/wine legs), AdminCommands (phase 38 — `::item` only, the first registered command, live-verified: admin spawn + denial path), WildernessDitch (phase 40 — `Cross` on object 23271 with the ForceMovement glide + click delay, live-verified: south/north/turn crossings + the wall leg), Shopkeepers (phase 41 — `shops.json` npcInteractions bindings via onAnyNpcInteraction + 19 item / 13 point currencies, live-verified: shop-open/buy/sell/shared/tokkul legs, 32 checks), Mining (phase 42 — full skill: core loop + all 8 sub-units, live-verified: copper/tin, depletion, full-inventory, walk-away legs, 18 checks), Smithing (phase 43 — full skill: smelting + anvil + cannonballs + godswords + dragon shields + spears + Superheat, new onSpellOnItem seam, live-verified: smelt/smith/menu/walkaway/ore-on-furnace/bar-on-anvil/full legs, 38 checks), Crafting (phase 44 — full skill: core loop + all 12 sub-units, `crafting:spun` producer for Fletching's spool, live-verified: jewellery/spinning/cutting/leather/pottery/walkaway/fall-through legs, 68 of 71 checks — the 3 failures are a corrected leg premise, see the phase-44 paragraph), Bank (phase 46 — player-facing banking: open at booths + bankers, deposit/withdraw, bank interface, placeholders, tabs, search, new onButtonClick/onButton hub families; live-verified: open-booth/deposit/withdraw/persist/full/close/open-banker legs, 44 of 44 checks — see the phase-46 paragraph), Magic (phase 45 — standard-book effects: StandardBindings + StandardCurses + Freezes + TeleBlock + ElementalStaves, EnchantJewellery (7 spells, 7-tick repeat), Ancient combat spells in the engine (16 spells, not a content entry); new onSpellCast/onSpellOnObject hub families, live-verified; live-verified: hub-proof/bind/Ice Rush/Ancient combat/Enchant/autocast/failure legs — see the phase-45 paragraph), NpcDialogues (phase 47 — Talk-to bindings: `Predecessors` filled from the transcribed retired-NPC table (12 mappings), id-index resolution proven with fixtures + live-verified with a smoke-root overlay, name/alias fallback live-verified on 6 Lumbridge NPCs; the real `npc-dialogue-index.json` import still needs Tyler's approval — see gap 30; live-verified: guide/hans/banker/duke/aereck/man/shopkeeper-index legs, 7 of 8 — the 8th is a corrected leg premise, see the phase-47 paragraph), all live-verified; the rest per `CONTENT_MIGRATION_PLAN.md`, piece by piece with Tyler's direction; no wholesale port) |
+| P3 | All `plugins/` content (2,907 JS files, 789,355 lines) | Go packages under `internal/content/` | PARTIAL (24 of 577 entries ported: DateMinutes (phase 10), GracefulOutfit + WornWeights (phase 22), LumbridgeGuide (phase 23), SeekingArrows (phase 24), Woodcutting (phases 32–33 — core loop + all sub-units except the Guild, which needs Tyler's `woodcutting-guild.json` import approval), Fletching (phase 34 — full skill: Shared loop, Recipes, Spool, Diaries, CreationMenu seam, all live-verified), Fishing (phase 35 — core loop + 8 of 10 sub-units, MinnowPlatform / Gita exchange / Guild door deferred, live-verified in 4 modes), Cooking (phase 36 — full skill: Cookers, Recipes, Wine, Churn, SacredEel, LeapingFish, Gnome, live-verified on fire/range/wine legs), AdminCommands (phase 38 — `::item` only, the first registered command, live-verified: admin spawn + denial path), WildernessDitch (phase 40 — `Cross` on object 23271 with the ForceMovement glide + click delay, live-verified: south/north/turn crossings + the wall leg), Shopkeepers (phase 41 — `shops.json` npcInteractions bindings via onAnyNpcInteraction + 19 item / 13 point currencies, live-verified: shop-open/buy/sell/shared/tokkul legs, 32 checks), Mining (phase 42 — full skill: core loop + all 8 sub-units, live-verified: copper/tin, depletion, full-inventory, walk-away legs, 18 checks), Smithing (phase 43 — full skill: smelting + anvil + cannonballs + godswords + dragon shields + spears + Superheat, new onSpellOnItem seam, live-verified: smelt/smith/menu/walkaway/ore-on-furnace/bar-on-anvil/full legs, 38 checks), Crafting (phase 44 — full skill: core loop + all 12 sub-units, `crafting:spun` producer for Fletching's spool, live-verified: jewellery/spinning/cutting/leather/pottery/walkaway/fall-through legs, 68 of 71 checks — the 3 failures are a corrected leg premise, see the phase-44 paragraph), Bank (phase 46 — player-facing banking: open at booths + bankers, deposit/withdraw, bank interface, placeholders, tabs, search, new onButtonClick/onButton hub families; live-verified: open-booth/deposit/withdraw/persist/full/close/open-banker legs, 44 of 44 checks — see the phase-46 paragraph), Magic (phase 45 — standard-book effects: StandardBindings + StandardCurses + Freezes + TeleBlock + ElementalStaves, EnchantJewellery (7 spells, 7-tick repeat), Ancient combat spells in the engine (16 spells, not a content entry); new onSpellCast/onSpellOnObject hub families, live-verified; live-verified: hub-proof/bind/Ice Rush/Ancient combat/Enchant/autocast/failure legs — see the phase-45 paragraph), NpcDialogues (phase 47 — Talk-to bindings: `Predecessors` filled from the transcribed retired-NPC table (12 mappings), id-index resolution proven with fixtures + live-verified with a smoke-root overlay, name/alias fallback live-verified on 6 Lumbridge NPCs; the real `npc-dialogue-index.json` was imported 2026-11-22 on Tyler's approval (7,438 NPC ids / 12,450 page entries), so the id-index path now runs on real data — see gap 30; live-verified: guide/hans/banker/duke/aereck/man/shopkeeper-index legs, 7 of 8 — the 8th is a corrected leg premise, see the phase-47 paragraph), Doors (phase 48 — door mechanism: startup cache-scan catalog (556 closed→open pairs) + toggle engine (single/double/wooden-gate/composite/self-opening/in-place/own-tile) + pass-through gates + `crossingFor`, 500-tick auto-close, `door:toggle`/`door:open`/`door:state` events with no consumers yet; live-verified: single/double/wooden-gate/kitchen legs, all four PASS — see the phase-48 paragraph; one live-found wiring bug fixed in-phase, one first-tick LOC_DEL defect carried forward — see gap 31), all live-verified; the rest per `CONTENT_MIGRATION_PLAN.md`, piece by piece with Tyler's direction; no wholesale port) |
 | P3 | Bots: `plugins/bots/` + bot runtime | undecided | NOT STARTED |
 | P3 | WebRTC transport | undecided | NOT STARTED |
 | P3 | Browser host: `BrowserHostHttpBridge`, IndexedDB persistence | undecided | NOT STARTED |
@@ -4180,9 +4269,11 @@ pick is Tyler's. Verification counts are unchanged from phase 24
     (c) The AnglerOutfit Gita exchange is NOT STARTED
     (needs `onItemOnNpc`, still table-only, plus
     `npc-dialogue:*` emitters and the Gita transcript).
-    (d) The Guild door is NOT STARTED (needs
-    `door:toggle` + ObstacleRunner / ForceMovement); the
-    Guild invisible boost (+7) IS ported. (e) The infernal
+    (d) The Guild door is NOT STARTED as a gate (the door
+    mechanism now exists since phase 48 — `door:toggle` +
+    the pass-through machinery, door id 422 at (2611,3394,0)
+    — but the 68 Fishing guild gate is unported); the Guild
+    invisible boost (+7) IS ported. See gap 31(h). (e) The infernal
     cook never fires (`cooking:raw-xp` has no answerer
     until Cooking lands). (f) Clue bottles fall to the
     ground, never into the inventory (no Go `forceAdd`).
@@ -4740,6 +4831,64 @@ pick is Tyler's. Verification counts are unchanged from phase 24
     Inn)", "Banker" → "Banker (Al Kharid)" — the first
     playable `Name (...)` key in catalogue order, not the
     nearest one; the id index (a) is the correct fix.
+
+31. Phase 48 residual gaps (Doors; all documented at the
+    port sites, none silent): (a) All 74 `door:toggle`
+    consumers NOT STARTED (52 quest files, 11 area/guild
+    files, 10 minigame/other files) — no lock, pick-lock,
+    or Unlock logic exists in Go, so quest/area-locked
+    pass-through gates swing for anyone until their guard
+    plugins land. (b) Pick-lock (8 consumer implementations)
+    + Unlock (4 door-relevant registrations) NOT STARTED.
+    (c) BrassKeyDoor, Stronghold of Security doors, Al-Kharid
+    gate, Construction dungeon doors NOT STARTED (own `Open`
+    handlers elsewhere in TS). (d) Trapdoors that Climb-down
+    NOT STARTED (LocTeleports territory — ladders, phase 49).
+    (e) Diagonal (type 9) doors: geometry ported +
+    unit-tested, live observation open. (f) 500-tick
+    auto-close: unit-covered only, not observed live (5
+    minutes too long for a live leg). (g) Pass-through gates:
+    mechanism + full 29-entry + 15-family tables ported,
+    unit-covered only, not observed live (placements are
+    quest-gated in TS; a live leg would prove the wrong
+    thing). (h) Fishing Guild door still deferred (needs the
+    guild gate; the mechanism now exists). (i) LIVE-FOUND
+    ENGINE DEFECT (not doors-specific): a Close clicked in
+    the first tick after login silently loses the open leaf's
+    LOC_DEL — reproduced deterministically live (single S3
+    twice, double S3 once: ADD 1535 arrives, sound 60,
+    dels = 0), while `closewatch` (same session) and
+    `closewatch2` (3 s settle after login) both deliver DEL
+    + ADD. Mechanism, verified in code: `FlushTick` drains
+    object deltas (`DrainDeltas`,
+    `internal/session/flush.go:450`) BEFORE the first tick's
+    `OnRegionChange` snapshot and before `hasReplayedScene`
+    is set (`flush.go:606, 691-697`); on that first tick
+    `IsTileInScene` is false for every tile
+    (`internal/session/objects.go:295`), so the removal delta
+    is dropped (`objects.go:492-496`) and
+    `recordMissedRemoval` no-ops on the fresh session's empty
+    shown map, while the same tick's snapshot re-sends the
+    closed leaf ADD (the restored copy enters the world list
+    via `addToWorld`, `internal/game/objects.go:1069-1072`).
+    Server-side state is correct throughout
+    (collision/refusal checks pass). Real-client impact
+    assessed as likely nil — the real client rebuilds its
+    scene from its own cache on login, which holds the closed
+    leaf, not the open one — but that is an assessment, not a
+    live observation; the ghost is visible to a frame-tracking
+    protocol client that carried the open leaf across
+    sessions. Needs either a real-client check or a
+    flush-ordering fix; any first-tick removal delta would
+    drop the same way, so this is a pre-existing engine
+    ordering issue, not a doors bug. (j) No `onRegionLoaded`
+    re-apply: Go has no region-loaded hook family, so an open
+    door is not re-applied after a region reload (state
+    survives; leaves return on next click). (k) The wall-door
+    route is registered directly in `Register` rather than
+    deferred to `onServerStartup`; the auto-close sound goes
+    out as an area sound at the closed tile (the opener is
+    gone).
 
 ## Next modules, in priority order
 

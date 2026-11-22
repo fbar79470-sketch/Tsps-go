@@ -561,15 +561,18 @@ func TestDialogueFilesValid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dialogue files must load: %v", err)
 	}
-	// The verbatim upstream import (Tyler-approved 2026-11-21,
-	// SHA-256 f50b9906…) holds 3,374 speaker records; the
-	// dialogue-index file is still the empty starter, so the
-	// index stays empty until that file is imported too.
-	if len(data.Records) != 3374 || len(data.Index) != 0 {
-		t.Fatalf("dialogue catalogue = %d records, %d index ids, want 3374 and 0",
+	// The verbatim upstream imports (Tyler-approved 2026-11-21,
+	// SHA-256 f50b9906… dialogues, 0e66e4c4… index) hold 3,374
+	// speaker records and 7,438 NPC ids in the index.
+	if len(data.Records) != 3374 || len(data.Index) != 7438 {
+		t.Fatalf("dialogue catalogue = %d records, %d index ids, want 3374 and 7438",
 			len(data.Records), len(data.Index))
 	}
 	if data.Record("'Beedy-eye' Jones") == nil {
 		t.Fatalf("expected a record for 'Beedy-eye' Jones")
+	}
+	entries := data.IndexEntries(306)
+	if len(entries) == 0 || entries[0].PageName() != "Lumbridge Guide" {
+		t.Fatalf("index id 306 must resolve to Lumbridge Guide, got %v", entries)
 	}
 }
