@@ -1,0 +1,64 @@
+# Publishes the arm64 game-server binary the TSPS Android app downloads
+# for its in-app server updates.
+#
+# On every push to main (and on manual dispatch) this cross-compiles
+# cmd/server for linux/arm64 with CGO disabled — the same build the APK
+# uses for its bundled libtsps-server.so — and publishes it to a rolling
+# release tagged "android-server-latest", with a SHA-256 checksum file
+# and a commit.txt holding the built commit SHA alongside it:
+#
+#   tsps-server-linux-arm64          the server binary
+#   tsps-server-linux-arm64.sha256   "sha256  tsps-server-linux-arm64"
+#   commit.txt                       the full 40-hex commit SHA
+#
+# The app downloads from:
+#   https://github.com/fbar79470-sketch/Tsps-go/releases/download/
+#     android-server-latest/tsps-server-linux-arm64
+# It verifies the checksum before installing, and checks commit.txt
+# against the commit its update check found — if they differ, the
+# release is still being built for that commit and the app reports
+# "still building" instead of installing a stale binary.
+#
+# First run: the release and its assets appear only after this file is
+# committed + pushed and the first workflow run completes. Until then
+# the app's update check reports "no update published yet" (not an
+# error) and the bundled server keeps working.
+#
+# No third-party actions are used: checkout + setup-go are first-party,
+# and the release is managed with the preinstalled `gh` CLI using the
+# automatic GITHUB_TOKEN (contents: write is granted below).
+name: Android server binary
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.1"
+
+      - name: Build arm64 server
+        run: GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -o tsps-server-linux-arm64 ./cmd/server
+
+      - name: Checksum and commit files
+        run: |
+          sha256sum tsps-server-linux-arm64 > tsps-server-linux-arm64.sha256
+          printf '%s' "$GITHUB_SHA" > commit.txt
+
+      - name: Publish rolling release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create android-server-latest --title "Latest Android server" --notes "Rolling build of the game server for the TSPS Android app (linux/arm64)." 2>/dev/null || true
+          gh release upload android-server-latest tsps-server-linux-arm64 tsps-server-linux-arm64.sha256 commit.txt --clobber
