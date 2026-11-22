@@ -264,6 +264,11 @@ func buildServer(opts Options) (*Server, error) {
 		wrapped := &game.ReplacementRegionSource{Base: sources, Replacements: replacements}
 		world.SetRegionManager(game.NewRegionManager(wrapped, sources, revision >= 209))
 	}
+	// Ladders wiring (see ladderswiring.go): installed after the
+	// RegionManager (the Blocked/Reach adapters capture it) and
+	// before the engine starts; the plugin loaded earlier, the
+	// mechanism is consulted only per click.
+	installLaddersMechanism(world, defs)
 	// Area + Wilderness wiring (see areaswiring.go): constructed
 	// after the RegionManager is installed (the Wilderness roof
 	// check reads through it) and before the engine starts. The

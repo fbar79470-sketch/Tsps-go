@@ -22,6 +22,7 @@ import (
 	_ "tsps-go/internal/content/fishing"
 	_ "tsps-go/internal/content/fletching"
 	_ "tsps-go/internal/content/gracefuloutfit"
+	_ "tsps-go/internal/content/ladders"
 	_ "tsps-go/internal/content/lumbridgeguide"
 	_ "tsps-go/internal/content/mining"
 	_ "tsps-go/internal/content/seekingarrows"
