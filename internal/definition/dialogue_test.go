@@ -489,20 +489,27 @@ func TestParseRetiredNPCSuccessors(t *testing.T) {
 	}
 }
 
-func TestDialogueStarterFilesValid(t *testing.T) {
-	// The shipped hand-written starters must load cleanly. The
+func TestDialogueFilesValid(t *testing.T) {
+	// The shipped dialogue files must load cleanly. The
 	// directory is absent in a bare-module checkout; skip there
 	// rather than failing an unrelated tree.
 	dir := filepath.Join("..", "..", "data", "definitions")
 	if _, err := os.Stat(filepath.Join(dir, "npc-dialogues.json")); err != nil {
-		t.Skipf("starter definitions dir absent: %v", err)
+		t.Skipf("definitions dir absent: %v", err)
 	}
 	data, err := LoadDialogueData(dir, DialogueLoadOptions{})
 	if err != nil {
-		t.Fatalf("starter dialogue files must load: %v", err)
+		t.Fatalf("dialogue files must load: %v", err)
 	}
-	if len(data.Records) != 0 || len(data.Index) != 0 {
-		t.Fatalf("starters must hold an empty catalogue: %d records, %d index ids",
+	// The verbatim upstream import (Tyler-approved 2026-11-21,
+	// SHA-256 f50b9906…) holds 3,374 speaker records; the
+	// dialogue-index file is still the empty starter, so the
+	// index stays empty until that file is imported too.
+	if len(data.Records) != 3374 || len(data.Index) != 0 {
+		t.Fatalf("dialogue catalogue = %d records, %d index ids, want 3374 and 0",
 			len(data.Records), len(data.Index))
+	}
+	if data.Record("'Beedy-eye' Jones") == nil {
+		t.Fatalf("expected a record for 'Beedy-eye' Jones")
 	}
 }

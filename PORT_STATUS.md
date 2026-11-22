@@ -966,7 +966,22 @@ mid-port and Bank jumped the queue (Tyler, 2026-11-21
   13892 / 13893 / 3207; 12 sequences. The file stays
   verbatim; mismatches are resolved in Go code, never by
   editing the JSON (zenyte gem-cut XP is 50 in the file,
-  OSRS says 200 — ported as-is).
+  OSRS says 200 — ported as-is). The same applies to
+  `data/definitions/npc-dialogues.json` (NPC dialogue
+  transcripts — speaker-keyed step trees), imported verbatim
+  2026-11-21 on Tyler's approval (widget tap "Import the
+  NPC dialogues file", SHA-256 verified identical to
+  upstream, `f50b9906...`, 45,911,508 bytes, 3,374 speaker
+  records) — the Go loader already existed from Phase 14
+  (`internal/definition/dialogue.go`, `LoadDialogueData`):
+  load-proven by test, 3,374 records, 0 index ids (the
+  `npc-dialogue-index.json` file is still the empty
+  starter). The placeholder test that asserted the files
+  were empty starters (`TestDialogueStarterFilesValid`) was
+  replaced by `TestDialogueFilesValid`, which asserts the
+  imported catalogue loads with the expected counts. The
+  file stays verbatim; no NPC dialogue bindings exist yet —
+  that is the queued NPC-dialogs phase.
 
 ## Module inventory
 
