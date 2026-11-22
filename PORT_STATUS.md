@@ -981,7 +981,15 @@ mid-port and Bank jumped the queue (Tyler, 2026-11-21
   replaced by `TestDialogueFilesValid`, which asserts the
   imported catalogue loads with the expected counts. The
   file stays verbatim; no NPC dialogue bindings exist yet —
-  that is the queued NPC-dialogs phase.
+  that is the queued NPC-dialogs phase. The same applies to
+  `data/definitions/bank-space.json` (bank capacity curve +
+  buy-slots dialogue — capacity, slotsPerBlock, blockCosts,
+  banker menu, dialogue), imported verbatim 2026-11-21 on
+  Tyler's approval (typed "Import bank-space.json too",
+  SHA-256 verified identical to upstream, `614910df...`,
+  3,353 bytes) — no Go loader exists yet; the file is data
+  for the Bank follow-up (gap 28: real capacity instead of
+  the flat 1410). The file stays verbatim.
 
 ## Module inventory
 
