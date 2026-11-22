@@ -50,10 +50,12 @@ import (
 // definitions directory: it lives with the plugin at
 // plugins/npcs/data/retired-npcs.json (plugin-private data, loaded
 // relative to the plugin file) and is never copied into this
-// repository. The successor mapping it carries reaches playback
-// through DialogueData.Predecessors, which the coordinator fills;
-// ParseRetiredNPCSuccessors parses the file's shape when the
-// coordinator has an approved copy to read.
+// repository. Its 12 successor mappings are transcribed into
+// retiredNPCSuccessors below (the Phase 33 transcription
+// precedent: values with file:line citations, not the file),
+// which LoadDialogueData copies into DialogueData.Predecessors;
+// ParseRetiredNPCSuccessors remains the tested parser for the
+// file's shape.
 //
 // Step contents are NOT validated at load: TS validates only the
 // record shape above and reads step fields loosely at playback.
@@ -326,11 +328,10 @@ type DialogueData struct {
 	// Predecessors maps a successor NPC id to the retired NPC id
 	// whose transcript it plays until it has its own (the
 	// PREDECESSOR map, built from plugins/npcs/data/retired-npcs.json
-	// at NpcDialogues.plugin.js:22-24). It is EMPTY unless the
-	// coordinator fills it: the source file is plugin-private
-	// data that is never copied into this repository, and the
-	// mapping must not be hand-recreated here. See
-	// ParseRetiredNPCSuccessors.
+	// at NpcDialogues.plugin.js:22-24). LoadDialogueData fills it
+	// from the transcribed retiredNPCSuccessors table below;
+	// ParseRetiredNPCSuccessors remains the parser for the file
+	// shape.
 	Predecessors map[int]int
 	// EventNames lists the names merged from event-dialogues.json,
 	// in file order, for boot reporting.
@@ -425,7 +426,7 @@ func LoadDialogueData(dir string, opts DialogueLoadOptions) (*DialogueData, erro
 		Aliases:         computeDialogueAliases(records, order),
 		Index:           index,
 		SpeakerIDByName: computeSpeakerIDIndex(index, opts.NPCName),
-		Predecessors:    make(map[int]int),
+		Predecessors:    retiredNPCPredecessors(),
 		EventNames:      eventNames,
 	}
 	return data, nil
@@ -778,6 +779,42 @@ func computeSpeakerIDIndex(index map[int][]DialogueIndexEntry, npcName func(int)
 		}
 	}
 	return byName
+}
+
+// retiredNPCSuccessors is the PREDECESSOR map (successor id ->
+// retired id) transcribed from
+// plugins/npcs/data/retired-npcs.json (upstream commit bfd81e3),
+// the Phase 33 transcription precedent: values with file:line
+// citations, not a copy of the file. The file is plugin-private
+// data that is never copied into this repository; its 12 successor
+// mappings are the whole table — retired ids with no successor
+// (Ranged, Magic, Cooking, Prayer and Banker tutors) are not
+// listed upstream and so are absent here. Direction matters: the
+// key is the successor, which plays the retired NPC's transcript
+// until it has its own.
+var retiredNPCSuccessors = map[int]int{
+	16821: 3216,  // Captain Harlan, was Melee combat tutor (retired-npcs.json:4)
+	16807: 3220,  // Cadmus, was Crafting tutor (retired-npcs.json:5)
+	16810: 3221,  // Finlay, was Fishing tutor (retired-npcs.json:6)
+	16809: 3222,  // Monlum, was Mining tutor (retired-npcs.json:7)
+	16806: 3224,  // Feoras, was Smithing apprentice (retired-npcs.json:8)
+	16816: 3225,  // Sani, was Master smithing tutor (retired-npcs.json:9)
+	16808: 3226,  // Wilfred, was Woodsman tutor (retired-npcs.json:10)
+	16804: 5523,  // Mikasi, was Hatius Cosaintus (Lumbridge diary) (retired-npcs.json:11)
+	16811: 8665,  // Arthur, was Arthur the Clue Hunter (retired-npcs.json:12)
+	16817: 16475, // Flotsam, was Floatsam (retired-npcs.json:13)
+	16818: 16476, // Flotsam, was Floatsam (retired-npcs.json:14)
+	16819: 16477, // Flotsam, was Floatsam (retired-npcs.json:15)
+}
+
+// retiredNPCPredecessors returns a fresh copy of the transcribed
+// successor table, so no caller can mutate the shared table.
+func retiredNPCPredecessors() map[int]int {
+	out := make(map[int]int, len(retiredNPCSuccessors))
+	for successor, retired := range retiredNPCSuccessors {
+		out[successor] = retired
+	}
+	return out
 }
 
 // ParseRetiredNPCSuccessors parses the shape of

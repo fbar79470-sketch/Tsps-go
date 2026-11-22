@@ -489,6 +489,66 @@ func TestParseRetiredNPCSuccessors(t *testing.T) {
 	}
 }
 
+func TestLoadDialoguePredecessors(t *testing.T) {
+	// LoadDialogueData fills Predecessors from the transcribed
+	// retired-npcs table (Phase 47): all 12 successor mappings,
+	// successor -> retired, and nothing else.
+	dir := dialogueFiles(t, map[string]string{
+		"npc-dialogues.json": `{}`,
+	})
+	data := mustLoadDialogue(t, dir, DialogueLoadOptions{})
+	want := map[int]int{
+		16821: 3216, 16807: 3220, 16810: 3221, 16809: 3222,
+		16806: 3224, 16816: 3225, 16808: 3226, 16804: 5523,
+		16811: 8665, 16817: 16475, 16818: 16476, 16819: 16477,
+	}
+	if len(data.Predecessors) != len(want) {
+		t.Fatalf("Predecessors = %v, want 12 mappings", data.Predecessors)
+	}
+	for successor, retired := range want {
+		if got := data.Predecessors[successor]; got != retired {
+			t.Errorf("Predecessors[%d] = %d, want %d", successor, got, retired)
+		}
+	}
+	// The transcribed table must agree with the file-shape
+	// parser run over the upstream successors object (verbatim
+	// copy of plugins/npcs/data/retired-npcs.json:3-16): a
+	// transcription typo fails here, not just against the
+	// hand-written map above.
+	parsed, err := ParseRetiredNPCSuccessors([]byte(`{"successors": {
+		"3216": {"id": 16821, "name": "Captain Harlan"},
+		"3220": {"id": 16807, "name": "Cadmus"},
+		"3221": {"id": 16810, "name": "Finlay"},
+		"3222": {"id": 16809, "name": "Monlum"},
+		"3224": {"id": 16806, "name": "Feoras"},
+		"3225": {"id": 16816, "name": "Sani"},
+		"3226": {"id": 16808, "name": "Wilfred"},
+		"5523": {"id": 16804, "name": "Mikasi"},
+		"8665": {"id": 16811, "name": "Arthur"},
+		"16475": {"id": 16817, "name": "Flotsam"},
+		"16476": {"id": 16818, "name": "Flotsam"},
+		"16477": {"id": 16819, "name": "Flotsam"}
+	}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed) != len(data.Predecessors) {
+		t.Fatalf("parsed = %v, loaded = %v", parsed, data.Predecessors)
+	}
+	for successor, retired := range parsed {
+		if got := data.Predecessors[successor]; got != retired {
+			t.Errorf("transcribed Predecessors[%d] = %d, upstream says %d", successor, got, retired)
+		}
+	}
+	// Each load gets its own map: mutating one must not leak
+	// into the next.
+	data.Predecessors[16821] = 0
+	data2 := mustLoadDialogue(t, dir, DialogueLoadOptions{})
+	if got := data2.Predecessors[16821]; got != 3216 {
+		t.Fatalf("second load Predecessors[16821] = %d, want 3216", got)
+	}
+}
+
 func TestDialogueFilesValid(t *testing.T) {
 	// The shipped dialogue files must load cleanly. The
 	// directory is absent in a bare-module checkout; skip there

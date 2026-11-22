@@ -2,6 +2,8 @@ package game
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -400,6 +402,147 @@ func TestResolveTranscriptPredecessorFallback(t *testing.T) {
 	resolved := pb.ResolveTranscript(event)
 	if resolved == nil || len(resolved.Steps) != 1 {
 		t.Fatalf("predecessor fallback resolved %+v", resolved)
+	}
+}
+
+func TestResolveTranscriptPredecessorFallbackLoadedMap(t *testing.T) {
+	// The same fallback through the map LoadDialogueData fills
+	// (Phase 47): Captain Harlan 16821 plays the retired 3216
+	// transcript. The definition name is unresolvable on purpose,
+	// so only the predecessor-index path can reach the page.
+	dir := t.TempDir()
+	for name, content := range map[string]string{
+		"npc-dialogues.json":      `{"Bob": {"steps": [{"npc": "Bob's flat line."}]}}`,
+		"npc-dialogue-index.json": `{"3216": [{"page": "Transcript:Bob"}]}`,
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	data, err := definition.LoadDialogueData(dir, definition.DialogueLoadOptions{})
+	if err != nil {
+		t.Fatalf("LoadDialogueData: %v", err)
+	}
+	if len(data.Predecessors) != 12 || data.Predecessors[16821] != 3216 {
+		t.Fatalf("loaded Predecessors = %v, want 12 mappings with 16821 -> 3216", data.Predecessors)
+	}
+	p, _ := newDialoguePlayer()
+	pb := NewDialoguePlayback(TranscriptDeps{Data: data})
+	event := transcriptTalkEvent(p)
+	event.NPCID = 16821
+	event.DefinitionName = "Nobody"
+	resolved := pb.ResolveTranscript(event)
+	if resolved == nil || resolved.Page != "Bob" || len(resolved.Steps) != 1 ||
+		resolved.Steps[0].NPCText != "Bob's flat line." {
+		t.Fatalf("loaded-map predecessor fallback resolved %+v", resolved)
+	}
+}
+
+func TestResolveTranscriptMultiPageFirstPlayableWins(t *testing.T) {
+	// An NPC indexed under several pages plays the first
+	// playable one (the id-index scan order).
+	p, _ := newDialoguePlayer()
+	data := transcriptTestData()
+	data.Index[123] = []definition.DialogueIndexEntry{
+		{Page: "Transcript:Questy", Variants: []string{"standard-dialogue", "quest"}},
+		{Page: "Transcript:Bob"},
+	}
+	pb := NewDialoguePlayback(TranscriptDeps{Data: data})
+	resolved := pb.ResolveTranscript(transcriptTalkEvent(p))
+	if resolved == nil || resolved.Page != "Questy" || len(resolved.Steps) != 1 ||
+		resolved.Steps[0].NPCText != "Standard Questy." {
+		t.Fatalf("first page must win: %+v", resolved)
+	}
+	// An unplayable first page falls through to the next.
+	data.Index[123] = []definition.DialogueIndexEntry{
+		{Page: "Transcript:Empty"},
+		{Page: "Transcript:Bob"},
+	}
+	resolved = pb.ResolveTranscript(transcriptTalkEvent(p))
+	if resolved == nil || resolved.Page != "Bob" || len(resolved.Steps) != 1 ||
+		resolved.Steps[0].NPCText != "Bob's flat line." {
+		t.Fatalf("unplayable first page must fall through: %+v", resolved)
+	}
+}
+
+func TestResolveTranscriptStepsOnlyPageWithVariantLabel(t *testing.T) {
+	// The Hudo case: the index labels the page with a variant
+	// name ("standard-dialogue") but the record holds only flat
+	// steps — the whole steps array plays.
+	p, _ := newDialoguePlayer()
+	data := transcriptTestData()
+	data.Records["Hudo"] = &definition.TranscriptRecord{
+		Name:     "Hudo",
+		Steps:    []definition.DialogueStep{transcriptNPCStep("Hudo's flat line.")},
+		HasSteps: true,
+	}
+	data.Index[123] = []definition.DialogueIndexEntry{{
+		Page:     "Transcript:Hudo",
+		Variants: []string{"standard-dialogue"},
+	}}
+	pb := NewDialoguePlayback(TranscriptDeps{Data: data})
+	resolved := pb.ResolveTranscript(transcriptTalkEvent(p))
+	if resolved == nil || resolved.Page != "Hudo" || len(resolved.Steps) != 1 ||
+		resolved.Steps[0].NPCText != "Hudo's flat line." {
+		t.Fatalf("steps-only page with a variant label resolved %+v", resolved)
+	}
+	// A variant hook answering the label plays the same flat
+	// steps (wantedSteps' standard-dialogue branch).
+	standard := NewNpcDialogueVariantRegistry(nil)
+	standard.Register(func(NpcDialogueVariantEvent) (NpcDialogueVariantChoice, bool) {
+		return NpcDialogueVariantChoice{Variant: "standard-dialogue"}, true
+	})
+	pb = NewDialoguePlayback(TranscriptDeps{Data: data, VariantHandlers: standard})
+	resolved = pb.ResolveTranscript(transcriptTalkEvent(p))
+	if resolved == nil || len(resolved.Steps) != 1 || resolved.Steps[0].NPCText != "Hudo's flat line." {
+		t.Fatalf("hook-answered standard-dialogue resolved %+v", resolved)
+	}
+	// A hook answering any other label on the flat page still
+	// plays the flat steps (fall-through to the PickVariant loop).
+	other := NewNpcDialogueVariantRegistry(nil)
+	other.Register(func(NpcDialogueVariantEvent) (NpcDialogueVariantChoice, bool) {
+		return NpcDialogueVariantChoice{Variant: "using-an-item-on-the-tool-leprechaun"}, true
+	})
+	pb = NewDialoguePlayback(TranscriptDeps{Data: data, VariantHandlers: other})
+	resolved = pb.ResolveTranscript(transcriptTalkEvent(p))
+	if resolved == nil || len(resolved.Steps) != 1 || resolved.Steps[0].NPCText != "Hudo's flat line." {
+		t.Fatalf("hook-answered other label resolved %+v", resolved)
+	}
+}
+
+func TestSpeakerIDByNameFromFixtureIndex(t *testing.T) {
+	// SpeakerIDByName is populated from a fixture index by the
+	// loader (page-name pass: the page "Alice" is indexed under
+	// id 456), and a paired-speaker line in playback resolves
+	// its chathead id through it.
+	dir := t.TempDir()
+	for name, content := range map[string]string{
+		"npc-dialogues.json":      `{"Alice": {"steps": []}}`,
+		"npc-dialogue-index.json": `{"456": [{"page": "Transcript:Alice"}]}`,
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	data, err := definition.LoadDialogueData(dir, definition.DialogueLoadOptions{})
+	if err != nil {
+		t.Fatalf("LoadDialogueData: %v", err)
+	}
+	if got := data.SpeakerIDByName["Alice"]; got != 456 {
+		t.Fatalf("SpeakerIDByName[Alice] = %d, want 456", got)
+	}
+	p, _ := newDialoguePlayer()
+	pb := NewDialoguePlayback(TranscriptDeps{Data: data})
+	pb.StartDialogue(transcriptTalkEvent(p), []definition.DialogueStep{{
+		Type: "line", Text: "Over here.", HasText: true,
+		Speaker: "Alice", HasSpeaker: true,
+	}}, nil, nil)
+	entry, ok := p.GetDialogueManager().GetCurrent().(*NpcDialogue)
+	if !ok {
+		t.Fatalf("current is %T, want *NpcDialogue", p.GetDialogueManager().GetCurrent())
+	}
+	if entry.GetNpcID() != 456 {
+		t.Errorf("paired-speaker head id = %d, want 456", entry.GetNpcID())
 	}
 }
 
