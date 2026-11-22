@@ -110,6 +110,24 @@ func displace(p *game.Player, slot int, worn game.Item) bool {
 	return true
 }
 
+// EquipForBank is the bank side panel's equip seam
+// (Bank.equipFromSide, Bank.ts:874-881): the bank calls
+// EquipPacketListener.equip with Inventory.INTERFACE_ID
+// (3214) after setting the preserve-interface attribute, so
+// the hook passes InventoryInterfaceID, exactly as the
+// inventory-click call sites do. The coordinator installs it
+// as game.BankEquipHook.
+func EquipForBank(p *game.Player, itemID, slot int) bool {
+	return equip(p, itemID, slot, game.InventoryInterfaceID)
+}
+
+// UnequipForBank is the bank worn panel's unequip seam
+// (Bank.wornSlotAction op 1, Bank.ts:1034-1041): the
+// coordinator installs it as game.BankUnequipHook.
+func UnequipForBank(p *game.Player, slot int) bool {
+	return unequip(p, slot)
+}
+
 // equip wears the item in inventory slot, checking that it is id
 // and that the open interface is the inventory interface.
 // EquipPacketListener.ts:101-236 (equip). It returns true when the

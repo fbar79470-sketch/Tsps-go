@@ -216,23 +216,73 @@ func (s *Session) sendGameframeTabSetup(group int) {
 // interface:opened. The existing SendSubInterface
 // (trade_sender.go) delegates to this at integration; until
 // then, mounts through it are untracked and emit nothing.
-// GAP: the TS options form (varps/varbits/hiddenUids/scripts,
-// encodeWidgetOpenSub's options) is not ported: no Go caller
-// passes options. The FrameUpdater clearGroup has no Go
-// equivalent (no FrameUpdater; see dialogue_sender.go).
+// The FrameUpdater clearGroup has no Go equivalent (no
+// FrameUpdater; see dialogue_sender.go). The options form is
+// MountSubInterfaceWithOptions; this is the no-options form.
 func (s *Session) MountSubInterface(targetUID, groupID, typ int) *SubInterfaceMount {
+	return s.MountSubInterfaceWithOptions(targetUID, groupID, typ, protocol.WidgetOpenSubOptions{})
+}
+
+// MountSubInterfaceWithOptions mounts groupID at targetUID
+// with type and the TS sendSubInterface options (varps,
+// varbits, hidden uids, pre/post scripts —
+// PacketSender.ts:1555-1574, encodeWidgetOpenSub,
+// ClientProtocol.ts:2286-2311): the options ride the
+// open-sub frame itself, so the client applies them with the
+// mount instead of after it. The bank open uses it for the
+// main 12 / side 15 mounts (varps {548:1, 262:sideWearOpsMask,
+// 4611:MAX_SLOTS-capacity} and the bank varbit bundle,
+// Bank.ts:1354-1414); every other caller passes the empty
+// options through MountSubInterface. The mount tracking,
+// main-inventory flags range, and interface:opened emit are
+// the same as MountSubInterface.
+func (s *Session) MountSubInterfaceWithOptions(targetUID, groupID, typ int, options protocol.WidgetOpenSubOptions) *SubInterfaceMount {
 	s.mu.Lock()
 	mount, displaced := s.rememberMountLocked(targetUID, groupID, typ)
 	s.mu.Unlock()
 	for _, frame := range displaced {
 		s.SendPacket(frame)
 	}
-	s.SendPacket(protocol.EncodeWidgetOpenSub(targetUID, groupID, typ, protocol.WidgetOpenSubOptions{}))
+	s.SendPacket(protocol.EncodeWidgetOpenSub(targetUID, groupID, typ, options))
 	if groupID == protocol.MainInventoryGroupID {
 		s.SendPacket(protocol.EncodeWidgetSetFlagsRange(protocol.MainInventoryWidgetUID, 0, 27, protocol.MainInventorySlotFlags))
 	}
 	s.emitInterfaceOpened(groupID, targetUID, typ)
 	return mount
+}
+
+// SendSideOps sends the bank side-panel wearable-ops mask
+// (Bank.sendSideOps, Bank.ts:854-861): varp 262, one bit per
+// inventory slot holding something wearable, so the client
+// shows the wear op on those side-inventory items. The
+// caller passes the inventory item ids in slot order and a
+// wearable predicate over item ids (the coordinator wires it
+// over the definition Store: EquipmentSlot() >= 0); a nil
+// predicate reads every item as unwearable. Only the first
+// 28 slots (the inventory) can set bits — further entries
+// are ignored, matching the 28-slot side panel.
+func (s *Session) SendSideOps(inventoryItemIDs []int, wearable func(itemID int) bool) {
+	s.SendVarp(sideOpsVarpID, sideWearOpsMask(inventoryItemIDs, wearable))
+}
+
+// sideOpsVarpID is the side-ops mask varp (Bank.ts:854-861).
+const sideOpsVarpID = 262
+
+// sideWearOpsMask computes the varp-262 mask for
+// inventoryItemIDs: bit i is set when slot i holds an item
+// (id >= 0) the wearable predicate accepts. Slots past the
+// 28-slot inventory are ignored.
+func sideWearOpsMask(inventoryItemIDs []int, wearable func(itemID int) bool) int {
+	mask := 0
+	for slot, id := range inventoryItemIDs {
+		if slot >= 28 {
+			break
+		}
+		if id >= 0 && wearable != nil && wearable(id) {
+			mask |= 1 << uint(slot)
+		}
+	}
+	return mask
 }
 
 // GetSubInterfaceAt returns the mount at targetUID, if any
@@ -544,9 +594,15 @@ func (s *Session) removeInterfaces() {
 //
 // GAPS (no Go state exists; nothing is invented):
 //   - releaseInterfaceInventories: no inventory-owner tracking.
-//   - bank-search flag, teleport-interface-open: no Go equivalents.
-//   - status reset: no PlayerStatus field; the SetStatusNone
-//     dep stays nil until one exists.
+//   - teleport-interface-open: no Go equivalent.
+//   - bank-search flag: the flag exists (phase 46,
+//     game.BankSearching) and clears through the
+//     EndBankSearch dep in removeInterfaces, which stays nil
+//     until the coordinator wires it in
+//     installInterfaceRuntime.
+//   - status reset: the PlayerStatus field exists (phase 46,
+//     status.go) but the SetStatusNone dep stays nil until the
+//     coordinator wires it in installInterfaceRuntime.
 func (s *Session) resetInterfaceState() int {
 	deps := s.interfaceDeps()
 	interfaceID := -1

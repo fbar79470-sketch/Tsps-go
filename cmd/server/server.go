@@ -300,6 +300,12 @@ func buildServer(opts Options) (*Server, error) {
 	installShopHooks(shops, hub)
 	installShopHubSurfaces(hub, shops, store)
 	installShopkeepers(hub, store, defs, logger)
+	// Bank wiring (see bankwiring.go / containerswiring.go):
+	// the bank flows + open-sequence sender install after the
+	// definition load, like the shop installs above. The
+	// world name feeds the "Bank of <world>" title.
+	installBankFlows()
+	installBankSender(worldDef.Name)
 	world.Hooks.Shops = func(cycle int64) { shops.Tick() }
 	world.Hooks.ShopProcessPlayer = func(p *game.Player) { shops.ProcessPlayer(p) }
 	// Dialogue data + transcript playback (see
@@ -1116,6 +1122,10 @@ func (a *worldAdapter) AddPlayer(ep *session.EnteringPlayer) (int, session.TurnS
 	// A nil hub leaves the hub seams unset; the sends install
 	// regardless.
 	InstallInterfaceActionListeners(&deps, a.plugins)
+	// Bank wiring (see bankwiring.go): the 243/244 deposit and
+	// 245 bank-move flows. Stateless; one shared value serves
+	// every player.
+	deps.Bank = bankListenerActions()
 	// World-entity wiring (see sailingwiring.go): the
 	// world-entity interaction gate/emit + helm-heading seams
 	// for opcodes 220-225/214. A nil hub/manager leaves the

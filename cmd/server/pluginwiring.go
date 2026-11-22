@@ -13,6 +13,7 @@ import (
 	// has no dynamic plugin loading, so registration is
 	// compile-time by design (see internal/plugins/doc.go).
 	_ "tsps-go/internal/content/admincommands"
+	_ "tsps-go/internal/content/bank"
 	_ "tsps-go/internal/content/cooking"
 	_ "tsps-go/internal/content/crafting"
 	_ "tsps-go/internal/content/dateminutes"

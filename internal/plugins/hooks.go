@@ -8,7 +8,7 @@
 // The PluginApi interface (PluginTypes.ts:999-1559) declares 108 distinct
 // hook families (on* methods; four have two overloads each and count once:
 // onObjectInteraction, onItemOnObject, onItemOnItem,
-// onItemAction). Fifty-nine get a registration method: the six lifecycle
+// onItemAction). Sixty-three get a registration method: the six lifecycle
 // families below (Hub.Emit* methods in this file; the coordinator wires
 // the production call sites) plus onCustomEvent (events.go), onCommand
 // (api.go; fired by the command registry through Hub.EmitCommandHooks,
@@ -58,7 +58,13 @@
 // CombatHooks.SpellRuneBypass seam — both phase 27, via cmd/server wiring), plus
 // onSpellOnItem in the same file (phase 43: fired from castSpellOnItem in the
 // MagicOnItem listener through the listeners' SpellHooks.EmitSpellOnItem seam,
-// wired in cmd/server/spellwiring.go; Superheat Item is its first consumer), the two shop families
+// wired in cmd/server/spellwiring.go; Superheat Item is its first consumer), plus
+// onSpellOnObject in the same file (phase 45: fired from spellOnObject in the
+// UseItem listener through the listeners' SpellHooks.EmitSpellOnObject seam,
+// wired in cmd/server/spellwiring.go; the emit is the action, with no fallback
+// cast), plus onSpellCast in the same file (phase 45: fired from routeWidgetAction
+// in the widget-action dispatch through the listeners' SpellHooks.EmitSpellCast
+// seam, wired in cmd/server/spellwiring.go; only when a spell name resolves), the two shop families
 // in shops.go (onCanShop, fired from ShopManager.open through the
 // game-side shop seam; onCanStockItem, fired per stock entry at
 // shop-definition load, after Hub.Load — see shops.go), the three
@@ -73,7 +79,10 @@
 // Hub.EmitInterfaceActionClick from the interface-action
 // dispatch paths in the listeners package through the cmd/server
 // adapter, after the MultiChatboxPrompt check — see
-// interfaces.go), the three skills families in skills.go
+// interfaces.go), the two simple-click button families in
+// buttons.go (onButtonClick, onButton; phase 46: fired by
+// Hub.EmitButtonClick from the widget-action fallthrough's
+// simple-click fallback — see buttons.go), the three skills families in skills.go
 // (onPlayerLevelUp, onExperienceGained, onCanGainExperience;
 // fired from SkillManager.addExperience through the game-side
 // SkillsHooks seam and cmd/server wiring, see skills.go),
@@ -84,7 +93,7 @@
 // item-action families in itemaction.go (onItemAction,
 // onItemFirstAction, onCanUseItem; fired by the item-action
 // listener through the cmd/server adapter — see itemaction.go).
-// The other 50 get NO registration method this phase.
+// The other 45 get NO registration method this phase.
 // Each is listed below with the missing engine system named. A family
 // gets a method only when its event type can be honestly typed AND an
 // emit site exists or is imminent; no family is silently dropped — if
@@ -129,11 +138,11 @@
 // Pathfinding events — PathFinder exists but emits nothing when a path is
 // blocked: `onPathBlocked`, `onPlayerPathBlocked`.
 //
-// Object interaction — the spell system is NOT STARTED, so the
-// spell-on-object family has no emit site: `onSpellOnObject`.
-// (The other ten object families are ported in objects.go:
-// onObjectRoute, onObjectInteraction, onBeforeObjectInteraction,
-// the onObjectClick family, and onItemOnObject.)
+// Object interaction — (the ten object families are ported
+// in objects.go: onObjectRoute, onObjectInteraction,
+// onBeforeObjectInteraction, the onObjectClick family, and
+// onItemOnObject; onSpellOnObject is ported in spells.go
+// since phase 45, fired by the spell-on-object listener.)
 //
 // NPC interaction & routing — spawned NPCs have drivers but no NPC click
 // routing to the hub beyond the attack option and the click
@@ -232,12 +241,15 @@
 // NPC spawn gate — spawns apply eagerly with no gate call site:
 // `onCanSpawnNpc`.
 //
-// Item-on-X, spells & item actions — the spell-on-object
-// family has no emit site and the drop listener calls no hub
-// emit: `onItemOnPlayer`, `onItemOnGroundItem`, `onSpellCast`,
+// Item-on-X, spells & item actions — the drop listener calls no hub
+// emit: `onItemOnPlayer`, `onItemOnGroundItem`,
 // `onItemDropPolicy`. (`onSpellOnItem` is ported in spells.go,
 // fired from castSpellOnItem through the listeners'
-// SpellHooks.EmitSpellOnItem seam; `onItemAction` and
+// SpellHooks.EmitSpellOnItem seam; `onSpellOnObject` and
+// `onSpellCast` are ported in spells.go since phase 45, fired
+// from the spell-on-object listener and the widget-action
+// dispatch through the listeners' SpellHooks seams;
+// `onItemAction` and
 // `onItemFirstAction` are ported in itemaction.go, fired by
 // the item-action listener through the cmd/server adapter;
 // `onItemOnItem` is ported in itemonitem.go, fired by the
@@ -249,15 +261,14 @@
 // Walk routing — MovementQueue exists but emits nothing when a route is
 // requested: `onWalkRoute`.
 //
-// Buttons & interfaces — the simple-click button families have no
-// emit: `onButtonClick`, `onButton`. (`onInterfaceActionClick`
-// and `onInterfaceActionButton` are ported in interfaces.go,
-// fired by Hub.EmitInterfaceActionClick from the listeners'
-// interface-action dispatch; `onCommand` is ported: the command
-// registry fires it through Hub.EmitCommandHooks. The
-// simple-click emitButtonClick fallback in the widget-action
-// fallthrough has no Go emit: with no button hooks registered
-// it can never claim a click.)
+// Buttons & interfaces — (`onButtonClick` and `onButton` are
+// ported in buttons.go, phase 46: fired by Hub.EmitButtonClick
+// from the widget-action fallthrough's simple-click fallback.
+// `onInterfaceActionClick` and `onInterfaceActionButton` are
+// ported in interfaces.go, fired by Hub.EmitInterfaceActionClick
+// from the listeners' interface-action dispatch; `onCommand` is
+// ported: the command registry fires it through
+// Hub.EmitCommandHooks.)
 //
 // NON-HOOK PluginApi MEMBERS (95 total; 30 ported —
 // registerLoginExtension in login.go, getPluginConfig, core, and
@@ -547,6 +558,8 @@ type hookRegistry struct {
 	spellRuneBypass  []hookEntry[*SpellRuneBypassEvent]
 	spellRuneSources []spellRuneSourceEntry
 	spellOnItem      []hookEntry[*SpellOnItemEvent]
+	spellOnObject    []hookEntry[*SpellOnObjectEvent]
+	spellCast        []hookEntry[*SpellCastEvent]
 
 	// Shop and trade hooks (see shops.go, trades.go): the
 	// can-shop / can-stock-item gates and the can-trade /

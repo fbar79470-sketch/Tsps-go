@@ -111,6 +111,25 @@ type SpellHooks struct {
 	// reporting whether a hook claimed it. Nil means no
 	// hooks are wired.
 	EmitSpellOnItem func(ev *SpellOnItemEvent) bool
+	// EmitSpellOnObject runs the onSpellOnObject hook family
+	// (PluginManager.emitSpellOnObject, PluginManager.ts:
+	// 1960-1966) for a spell cast on an object, reporting
+	// whether a hook claimed it. The emit IS the action: an
+	// unclaimed cast has no fallback. Nil means no hooks
+	// are wired.
+	EmitSpellOnObject func(ev *SpellOnObjectEvent) bool
+	// EmitSpellCast runs the onSpellCast hook family
+	// (PluginManager.emitSpellCast, PluginManager.ts:
+	// 1987-1993) for a spell cast from the spellbook on
+	// nothing, reporting whether a hook claimed it. Nil
+	// means no hooks are wired.
+	EmitSpellCast func(ev *SpellCastEvent) bool
+	// IsSpellWidgetGroup reports whether a widget group id
+	// holds spells (CacheDefinitions.isSpellWidgetGroup,
+	// internal/cache/facade.go: IsSpellWidgetGroup). Nil
+	// means no cache is wired: no widget group counts as a
+	// spell group, so no spell cast fires.
+	IsSpellWidgetGroup func(groupID int) bool
 	// SpellRuneBypass is the onSpellRuneBypass first-answer
 	// gate (PluginManager.emitSpellRuneBypass,
 	// PluginManager.ts:1851-1876; contract C3). The
@@ -179,6 +198,43 @@ type SpellOnNpcEvent struct {
 	Handled      bool
 }
 
+// SpellOnObjectEvent is the listener-facing form of the
+// onSpellOnObject hook event (UseItemPacketListener.ts:199-241,
+// spellOnObject): the caster, the object and its id, the
+// spell selection (widget, child, item id, resolved combat
+// spell id — -1 when the selection resolves to no spell),
+// and the object's tile. A hook sets Handled to claim the
+// cast; the emit is the action, so an unclaimed cast has no
+// fallback. Location is the OBJECT's tile, as TS builds it
+// from the object's location.
+type SpellOnObjectEvent struct {
+	Player      *game.Player
+	Object      ObjectEntry
+	ObjectID    int
+	SpellWidget int
+	SpellChild  int
+	SpellItemID int
+	SpellID     int
+	Location    game.Location
+	Handled     bool
+}
+
+// SpellCastEvent is the listener-facing form of the
+// onSpellCast hook event (NetworkBuilder.ts:1804-1812,
+// emitSpellCast): the caster, the cache spell name, the
+// spell's widget and item ids, and the spellbook option
+// clicked (1 for "Cast"). A hook sets Handled to claim the
+// cast; a claimed click is consumed, an unclaimed one falls
+// through to the existing branches.
+type SpellCastEvent struct {
+	Player      *game.Player
+	SpellName   string
+	SpellWidget int
+	SpellItemID int
+	OpID        int
+	Handled     bool
+}
+
 // SpellOnItemEvent is the listener-facing form of the onSpellOnItem
 // hook event (NetworkBuilder.ts:1188-1198, emitSpellOnItem): the
 // caster, the cache spell name ("" when the cache has none), the
@@ -205,6 +261,52 @@ func spellNameOf(deps Deps, widgetID, itemID int) (string, bool) {
 		return "", false
 	}
 	return deps.SpellHooks.SpellName(widgetID, itemID)
+}
+
+// resolveSpellName resolves the cache spell name for a
+// widget click (NetworkBuilder.resolveSpellName,
+// NetworkBuilder.ts:1814-1820): the spell-widget group gate
+// first — a non-spell group resolves nothing — then the
+// packed widget id, then the child id. A nil group seam
+// reads "not a spell group", so no name resolves. The
+// packed form is (groupId << 16) | (childId & 0xffff).
+func resolveSpellName(deps Deps, widgetID, groupID, childID, itemID int) (string, bool) {
+	if deps.SpellHooks.IsSpellWidgetGroup == nil || !deps.SpellHooks.IsSpellWidgetGroup(groupID) {
+		return "", false
+	}
+	if name, ok := spellNameOf(deps, widgetID, itemID); ok {
+		return name, true
+	}
+	packed := (groupID << 16) | (childID & 0xffff)
+	if name, ok := spellNameOf(deps, packed, itemID); ok {
+		return name, true
+	}
+	return spellNameOf(deps, childID, itemID)
+}
+
+// emitSpellCast runs the onSpellCast hook family for a
+// widget-action click (NetworkBuilder.emitSpellCast,
+// NetworkBuilder.ts:1804-1812): resolve the spell name, and
+// only when one resolves, emit with opId = buttonNum ??
+// opId ?? 1 (the caller supplies the already-resolved op id)
+// and report whether a hook claimed the click. A nil emit
+// seam reads unclaimed, the no-hooks default.
+func emitSpellCast(deps Deps, p *game.Player, widgetID, groupID, childID, itemID, opID int) bool {
+	name, ok := resolveSpellName(deps, widgetID, groupID, childID, itemID)
+	if !ok {
+		return false
+	}
+	if deps.SpellHooks.EmitSpellCast == nil {
+		return false
+	}
+	ev := &SpellCastEvent{
+		Player:      p,
+		SpellName:   name,
+		SpellWidget: widgetID,
+		SpellItemID: itemID,
+		OpID:        opID,
+	}
+	return deps.SpellHooks.EmitSpellCast(ev)
 }
 
 // resolveSpellID resolves the client spell id for a click

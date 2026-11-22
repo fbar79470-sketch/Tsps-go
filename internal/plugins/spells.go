@@ -17,6 +17,18 @@
 //     first non-null "bypass" answer wins; no answer yields
 //     null. The registration wrapper is the same shape
 //     (PluginManager.ts:3996-4013).
+//   - emitSpellOnItem (PluginManager.ts:1975-1984): the slot/id
+//     guard claims a stale slot first, then the hooks in order
+//     with the TS loop's `if (event.handled) break`.
+//   - emitSpellOnObject (PluginManager.ts:1960-1966): the loop
+//     runs ALL hooks with no break; the per-hook registration
+//     wrapper (PluginManager.ts:4201-4213) still skips once the
+//     event is handled, so the first claim wins at handler
+//     level. No entry guard.
+//   - emitSpellCast (PluginManager.ts:1987-1993): the hooks in
+//     order with the TS loop's `if (event.handled) break`.
+//     The call site only emits when a spell name resolves
+//     (NetworkBuilder.ts:1804-1812).
 //   - checkSpellRuneSource (PluginManager.ts:5056-5074): the
 //     first source that can supply every missing item answers
 //     true, or false when none can; an empty missing list
@@ -118,6 +130,43 @@ type SpellOnItemEvent struct {
 	Handled bool
 }
 
+// SpellOnObjectEvent is the payload of the onSpellOnObject
+// hooks. It mirrors PluginSpellOnObjectEvent
+// (PluginTypes.ts:763-774): the player, the object (the
+// GameObject type from ObjectInteractionEvent, objects.go:57),
+// its id, the spell's widget/child/item ids, the resolved
+// combat spell id (-1 when the selection resolves to no
+// spell), the object's tile, and the handled flag. A hook sets
+// Handled to claim the cast; the emit runs ALL hooks with no
+// break, so a later hook still sees the event.
+type SpellOnObjectEvent struct {
+	Player      *game.Player
+	Object      GameObject
+	ObjectID    int
+	SpellWidget int
+	SpellChild  int
+	SpellItemID int
+	SpellID     int
+	Location    game.Location
+	Handled     bool
+}
+
+// SpellCastEvent is the payload of the onSpellCast hooks. It
+// mirrors PluginSpellCastEvent (PluginTypes.ts:790-800): the
+// player, the spellbook name of the cast spell, the spell's
+// widget and item ids, the spellbook option clicked (1 for
+// "Cast"; 2 is Varrock Teleport's "Grand Exchange"), and the
+// handled flag. A hook sets Handled to claim the cast; the
+// first claim wins and later hooks never run.
+type SpellCastEvent struct {
+	Player      *game.Player
+	SpellName   string
+	SpellWidget int
+	SpellItemID int
+	OpID        int
+	Handled     bool
+}
+
 // SpellRuneSource is a container that can supply runes the
 // inventory cannot, e.g. a rune pouch. It mirrors
 // PluginSpellRuneSource (PluginTypes.ts:981-988): Check is
@@ -190,6 +239,30 @@ func (r *hookRegistry) snapshotSpellOnItem() []hookEntry[*SpellOnItemEvent] {
 	return append([]hookEntry[*SpellOnItemEvent](nil), r.spellOnItem...)
 }
 
+func (r *hookRegistry) addSpellOnObject(e hookEntry[*SpellOnObjectEvent]) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.spellOnObject = append(r.spellOnObject, e)
+}
+
+func (r *hookRegistry) snapshotSpellOnObject() []hookEntry[*SpellOnObjectEvent] {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return append([]hookEntry[*SpellOnObjectEvent](nil), r.spellOnObject...)
+}
+
+func (r *hookRegistry) addSpellCast(e hookEntry[*SpellCastEvent]) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.spellCast = append(r.spellCast, e)
+}
+
+func (r *hookRegistry) snapshotSpellCast() []hookEntry[*SpellCastEvent] {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return append([]hookEntry[*SpellCastEvent](nil), r.spellCast...)
+}
+
 // --- registration methods ---
 
 // OnSpellDisabled registers a spell-disabled hook, mirroring
@@ -259,6 +332,59 @@ func (a *Api) OnSpellOnItem(handler func(*SpellOnItemEvent)) {
 		return
 	}
 	a.hub.hooks.addSpellOnItem(hookEntry[*SpellOnItemEvent]{pluginName: a.name, handler: func(event *SpellOnItemEvent) {
+		if event == nil || event.Handled || event.Player == nil {
+			return
+		}
+		handler(event)
+	}})
+}
+
+// OnSpellOnObject registers a spell-on-object hook,
+// mirroring onSpellOnObject (PluginTypes.ts:1208). Hooks run
+// in registration order through EmitSpellOnObject, whose loop
+// has no break (PluginManager.ts:1960-1966) — but each hook's
+// registration wrapper skips once the event is handled, so
+// the first claim still wins at handler level, exactly as
+// OnSpellOnItem's wrapper does for the breaking emit. A nil
+// handler is ignored silently, mirroring the createApi guard
+// (PluginManager.ts:4201-4213). The stored handler wraps the
+// plugin's with the TS guard: an event without a player or
+// object, or one already handled, never reaches the plugin's
+// handler.
+func (a *Api) OnSpellOnObject(handler func(*SpellOnObjectEvent)) {
+	if handler == nil {
+		return
+	}
+	if !a.canRegister("onSpellOnObject") {
+		return
+	}
+	a.hub.hooks.addSpellOnObject(hookEntry[*SpellOnObjectEvent]{pluginName: a.name, handler: func(event *SpellOnObjectEvent) {
+		if event == nil || event.Handled || event.Player == nil || event.Object == nil {
+			return
+		}
+		handler(event)
+	}})
+}
+
+// OnSpellCast registers a spell-cast hook, mirroring
+// onSpellCast (PluginTypes.ts:1212). Hooks run in
+// registration order through EmitSpellCast: each hook's
+// registration wrapper skips once the event is handled, so
+// the first claim wins and later hooks never run — the TS
+// loop's `if (event.handled) break`
+// (PluginManager.ts:1987-1993). A nil handler is ignored
+// silently, mirroring the createApi guard
+// (PluginManager.ts:4239-4251). The stored handler wraps the
+// plugin's with the TS guard: an event without a player, or
+// one already handled, never reaches the plugin's handler.
+func (a *Api) OnSpellCast(handler func(*SpellCastEvent)) {
+	if handler == nil {
+		return
+	}
+	if !a.canRegister("onSpellCast") {
+		return
+	}
+	a.hub.hooks.addSpellCast(hookEntry[*SpellCastEvent]{pluginName: a.name, handler: func(event *SpellCastEvent) {
 		if event == nil || event.Handled || event.Player == nil {
 			return
 		}
@@ -382,6 +508,60 @@ func (h *Hub) EmitSpellOnItem(event *SpellOnItemEvent) bool {
 	}
 	emitHooks(h.Logger(), "spell_on_item", h.hooks.snapshotSpellOnItem(), event)
 	return event.Handled
+}
+
+// EmitSpellOnObject runs the onSpellOnObject hooks for a spell
+// cast on an object, mirroring
+// PluginManager.emitSpellOnObject (PluginManager.ts:1960-1966)
+// with label "spell_on_object": the loop runs ALL hooks with
+// no break, and the result is whether a hook claimed the cast.
+// The per-hook registration wrappers still skip once the event
+// is handled (PluginManager.ts:4201-4213), so the first claim
+// wins at handler level, exactly as EmitSpellOnItem's
+// breaking loop does — the run-all shape is the emit's, not
+// the handlers'. A nil Hub, a Hub without a registry, or a nil
+// event yields false (Go-only guards; TS has no nil-event
+// equivalent). Unlike EmitSpellOnItem there is no slot guard:
+// TS's emit has no entry guard at all, and the listener only
+// emits for an object the lookup found.
+//
+// The production call site is spellOnObject
+// (internal/listeners/useitem.go), through the listeners'
+// SpellHooks.EmitSpellOnObject seam wired in
+// cmd/server/spellwiring.go. Charge Orbs is its first
+// consumer (phase 45, slice 3).
+func (h *Hub) EmitSpellOnObject(event *SpellOnObjectEvent) bool {
+	if h == nil || h.hooks == nil || event == nil {
+		return false
+	}
+	emitHooks(h.Logger(), "spell_on_object", h.hooks.snapshotSpellOnObject(), event)
+	return event.Handled
+}
+
+// EmitSpellCast runs the onSpellCast hooks for a spell cast
+// from the spellbook on nothing, mirroring
+// PluginManager.emitSpellCast (PluginManager.ts:1987-1993)
+// with label "spell_cast": the hooks run in registration
+// order through the runHandledGate contract (gates.go), each
+// skipped once the event is handled (the TS loop's break),
+// and the result is whether a hook claimed the cast. A nil
+// Hub, a Hub without a registry, or a nil event yields false
+// (Go-only guards; TS has no nil-event equivalent). The
+// listener only emits when a spell name resolves
+// (NetworkBuilder.ts:1804-1812), so an unresolvable click
+// never reaches this emit.
+//
+// The production call site is routeWidgetAction
+// (internal/listeners/listeners.go), through the listeners'
+// SpellHooks.EmitSpellCast seam wired in
+// cmd/server/spellwiring.go. Bolt Enchanting and the Lunar
+// crafting spells are its first consumers (phase 45).
+func (h *Hub) EmitSpellCast(event *SpellCastEvent) bool {
+	if h == nil || h.hooks == nil || event == nil {
+		return false
+	}
+	return runHandledGate(h.Logger(), "spell_cast", h.hooks.snapshotSpellCast(), event,
+		func(e *SpellCastEvent) bool { return e.Handled })
 }
 
 // CheckSpellRuneSource reports whether a registered rune source

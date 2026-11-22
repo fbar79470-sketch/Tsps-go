@@ -71,20 +71,30 @@
 // specific handler claims Talk-to, so the order is unobservable
 // today.
 //
-// Walk-to: walkToEntity (MovementQueue.ts:1478-1589) is NOT
-// STARTED in Go — no NPC interaction targets exist in the queue
-// (movement_queue.go) — and this package cannot add it. The
-// walk reuses WalkToTile with the ReachedObj predicate (the
-// phase 9 ground-item shape): the player routes near the NPC's
-// tile and arrives when on it or orthogonally adjacent with no
-// wall between. DEVIATIONS from walkToEntity, all at this site:
-// the NPC footprint size is ignored (a 1x1 reach at the NPC's
-// origin tile, so a large NPC's far corner does not reach); there
-// is no pursuit re-pathing (NPCs are static, milestone 6, so the
-// target never moves); the range>1 projectile-clip term of the
-// reached test is not evaluated (no clip access from listeners);
-// the frozen-player counter/nearest-tile branches do not exist
-// (no freeze system); and the exact-tile-match shortcut in
+// Walk-to: walkToEntity (MovementQueue.ts:1478-1589),
+// NPCOptionPacketListener.ts:78-93: the player walks to
+// the NPC and the arrival closure operates on arrival.
+// Go's WalkToEntity is the default-range (range 1) form,
+// which is the route event's range in Go today (no
+// onNpcRoute emit exists to change it -- the clamp above
+// keeps it at 1). It carries the counter branch
+// (canInteractWithUnreachableNpc, MovementQueue.ts:1553
+// / 1579): a banker behind a bank-booth counter, with no
+// adjacent tile reachable, is operated from the nearest
+// tile within radius 2 with a clear projectile ray —
+// the WalkToTile + ReachedObj shape this site used
+// before could never arrive there, so every banker
+// click failed with "I can't reach that!" (found live
+// in phase 46: Bank on banker 1618 at (3090,3243)
+// ended the player at (3092,3243) with the refusal,
+// while the booth leg worked). DEVIATIONS from
+// walkToEntity, all at this site: the range>1
+// projectile-clip term of the reached test is not
+// evaluated (no clip access from listeners) — a
+// Range > 1 keeps the old WalkToTile shape with the
+// within-distance predicate; the frozen-player
+// counter/nearest-tile branches do not exist (no
+// freeze system); and the exact-tile-match shortcut in
 // WalkToTile runs the arrival before any mobility check (the
 // queue's own shape, shared with pickup). The arrival closure
 // re-validates the target the way the walkToEntity task does
@@ -141,12 +151,14 @@
 // override is set before routing, even when routing then
 // refuses the packet.
 //
-// The bank branch is a GAP, as for objects: when no dialogue and
-// no plugin handles the interaction and the option is "bank", TS
-// opens the bank and the click counts as operated. No interface
-// runtime, player status, or bank-open state exists in Go
-// (milestone 8), so the bank option stays silent: no open, no
-// operated emit, no message.
+// The bank branch: when no dialogue and no plugin handles the
+// interaction and the option is "bank", TS opens the bank and the
+// click counts as operated. In Go the Bank content (phase 46)
+// claims the click first, through the onNpcInteraction emit
+// above, so this branch only fires when no handler claims it:
+// then it stays silent (no open, no operated emit, no message),
+// a deviation from TS's own open, reachable only with the Bank
+// content unloaded.
 //
 // The no-handler fallback is the TS message, not silence (unlike
 // objects): dispatch sends "Nothing interesting happens." and
@@ -677,17 +689,18 @@ func npcAction(p *game.Player, msg protocol.NpcOption, cycle int64, deps Deps) n
 		npcOperate(p, npc, msg.Index, msg.ClickType, arrivalDef, arrivalOption, arrivalHasOption, npcLoc, deps)
 	}
 
-	// Reached predicate: range <= 1 is the entity reach
-	// (ReachedObj, the 1x1 form — see the file header for
-	// the footprint deviation); range > 1 is the
-	// within-distance term only (the projectile-clip term
-	// is a gap: no clip access from listeners). NPCs are
-	// static, so the click-time tile stands for the live
-	// tile.
+	// Walk-to: walkToEntity at the route event's range.
+	// Range <= 1 is Go's WalkToEntity (the default-range
+	// form); Range > 1 keeps the old WalkToTile shape
+	// with the within-distance predicate (the range>1
+	// projectile-clip term is a gap: no clip access from
+	// listeners). NPCs are static, so the click-time tile
+	// stands for the live tile.
+	if route.Range <= 1 {
+		p.MovementQueue().WalkToEntity(game.NPCTarget(npc), arrival)
+		return npcStarted
+	}
 	reached := func(dest game.Location) bool {
-		if route.Range <= 1 {
-			return p.MovementQueue().ReachedObj(dest)
-		}
 		return p.Location().IsWithinDistance(dest, route.Range)
 	}
 	p.MovementQueue().WalkToTile(npcLoc, arrival, reached, true, cycle)
@@ -696,9 +709,10 @@ func npcAction(p *game.Player, msg protocol.NpcOption, cycle int64, deps Deps) n
 
 // npcOperate ports operate + dispatch
 // (NPCOptionPacketListener.ts:106-172): the static shop step,
-// the dialogue seam, the plugin interaction emit, the bank gap,
-// and the "Nothing interesting happens." fallback. A claimed
-// click emits npc:operated; the bank gap and the fallback do
+// the dialogue seam, the plugin interaction emit, the bank
+// branch, and the "Nothing interesting happens." fallback. A
+// claimed click emits npc:operated; the bank branch and the
+// fallback do
 // not.
 func npcOperate(p *game.Player, npc *game.NPC, index, clickType int, def NpcDefinition, option string, hasOption bool, npcLoc game.Location, deps Deps) {
 	// Static shop step (NpcInteractionManager.handle, the
@@ -767,10 +781,14 @@ func npcOperate(p *game.Player, npc *game.NPC, index, clickType int, def NpcDefi
 		}
 	}
 	if option == "bank" {
-		// Bank branch (lines 160-164): GAP — opening the
-		// bank needs the interface runtime (milestone 8).
-		// No open, no operated emit, no message (the
-		// object bank gap behaves the same way).
+		// Bank branch (lines 160-164): the Bank content
+		// (phase 46) normally claims the click through
+		// the interaction emit above, so this fallback
+		// only fires with no handler: silent (no open,
+		// no operated emit, no message — a deviation
+		// from TS's own open, reachable only with the
+		// Bank content unloaded; the object bank gap
+		// behaves the same way).
 		return
 	}
 	// No-handler fallback (lines 166-167): the message, and

@@ -21,10 +21,16 @@
 // onNpcRoute stay table-only, so item-on-NPC stays a decode-drop
 // even with combat landed; itemOnGroundItem needs
 // emitItemOnGroundItem (family unfired). spellOnObject (opcode
-// 2) stays decode-drop: magic is NOT STARTED and onSpellOnObject
-// stays table-only. The spell click still sets the click-run
-// override (it is in INTERACTION_CLICKS,
-// NetworkBuilder.ts:246-260) before dropping.
+// 2) routes since phase 45: the walk-to-object arrival emits
+// onSpellOnObject, which IS the action (no fallback cast).
+// The spell click still sets the click-run override (it is in
+// INTERACTION_CLICKS, NetworkBuilder.ts:246-260) before routing.
+//
+// spellOnObject has NO hitpoints/busy gate and NO slot/item
+// verification — only the object lookup and the walk (TS
+// UseItemPacketListener.spellOnObject looks the object up and
+// walks; the spell selection itself is trusted, as the
+// widget-action path is for spell casts).
 //
 // itemOnItem is implemented since phase 33: the inventory kind
 // of INVENTORY_USE_ON (241) routes here, not through a
@@ -75,6 +81,29 @@ func routeItemOnObject(p *game.Player, msg protocol.ItemOnObject, cycle int64, d
 		return drop(ReasonUseItem)
 	}
 	if itemOnObject(p, int(msg.WidgetID), msg.ObjectID, msg.ItemID, msg.Slot, msg.X, msg.Y, cycle, deps) {
+		return acted()
+	}
+	return noAction()
+}
+
+// routeSpellOnObject routes one decoded spell_on_object
+// (OPLOC_T) message. The click-run override is set before
+// routing, even when routing then refuses the packet (the
+// INTERACTION_CLICKS preamble + the item-on-object
+// precedent). An unwired lookup or definition source drops
+// with ReasonUseItem; a refused packet returns noAction, the
+// silent return TS gives.
+func routeSpellOnObject(p *game.Player, msg protocol.SpellOnObject, cycle int64, deps Deps, drop func(DropReason) Outcome, acted, noAction func() Outcome) Outcome {
+	if p == nil {
+		return drop(ReasonNoPlayer)
+	}
+	if q := p.MovementQueue(); q != nil {
+		q.SetClickRunOverride(game.ClickRunOverride(p.IsRunning(), msg.ModifierFlags))
+	}
+	if deps.Objects == nil || deps.ObjectDefs == nil {
+		return drop(ReasonUseItem)
+	}
+	if spellOnObject(p, msg, cycle, deps) {
 		return acted()
 	}
 	return noAction()
@@ -195,6 +224,114 @@ func itemOnItem(p *game.Player, msg protocol.InventoryUseOn, deps Deps) bool {
 	if deps.ObjectHooks.EmitItemOnItem != nil {
 		ev.Handled = deps.ObjectHooks.EmitItemOnItem(ev)
 	}
+	return true
+}
+
+// spellOnObject ports UseItemPacketListener.spellOnObject
+// (UseItemPacketListener.ts:199-241). It reports whether the
+// walk-to started. There is no hitpoints/busy gate and no
+// spell/item verification: the object is looked up at the
+// packet tile (a miss returns silently), the walk runs the
+// arrival closure, and the arrival closure re-checks
+// still-stands, resets, faces the object, then emits
+// onSpellOnObject — the emit IS the action, with no fallback
+// cast when no hook claims it. The spell id resolves through
+// resolveSpellID (NetworkBuilder.resolveClientCombatSpellId,
+// NetworkBuilder.ts:1786-1800), as the dispatch passes it in
+// (NetworkBuilder.ts:825-834); -1 when the selection resolves
+// to no spell. The route spec resolves the definition the
+// same way itemOnObject does (forPlayer ?? forId), because
+// the walk needs the footprint and mask.
+func spellOnObject(p *game.Player, msg protocol.SpellOnObject, cycle int64, deps Deps) bool {
+	if !playerReady(p) {
+		return false
+	}
+
+	// Location (line 209): the packet x/y with the player's
+	// plane. Lookup (line 210): MapObjects.getPrivateArea. A
+	// miss returns silently.
+	loc := game.Location{X: msg.X, Y: msg.Y, Z: p.Location().Z}
+	obj := deps.Objects.Find(p, msg.ObjectID, loc)
+	if obj == nil {
+		return false
+	}
+
+	// Definition: forPlayer ?? forId on the object's id (see
+	// the file header). Base definition for the type 10/11
+	// footprint rule, falling back to the resolved definition.
+	def, ok := deps.ObjectDefs.ObjectForPlayer(obj.ID(), p)
+	if !ok {
+		if b, ok := deps.ObjectDefs.ObjectByID(obj.ID()); ok {
+			def = b
+		} else {
+			return false
+		}
+	}
+	base := def
+	if b, ok := deps.ObjectDefs.ObjectByID(obj.ID()); ok {
+		base = b
+	}
+
+	// The walk-to-object validity check re-looks the object up
+	// by its own id and tile (MovementQueue.ts:1686, 1823).
+	stillStands := func() bool {
+		return objectStillStands(deps.Objects, p, obj.ID(), obj.Location(), obj)
+	}
+
+	// Arrival closure: execute (lines 215-240). No clickType
+	// argument: the route event carries clickType 0, as
+	// itemOnObject does.
+	arrival := func() {
+		// Still-stands re-check (line 216), by the packet
+		// id and the click tile: return if gone.
+		if !objectStillStands(deps.Objects, p, msg.ObjectID, loc, obj) {
+			return
+		}
+		// Reset + walkToReset, and face the object (line
+		// 219: setPositionToFace). The player-facing seam
+		// exists since phase 33; the object-click arrival
+		// does not call it yet, but this route follows TS
+		// here.
+		objLoc := obj.Location()
+		q := p.MovementQueue()
+		q.Reset(true)
+		q.CancelWalkTo()
+		p.SetPositionToFace(&objLoc)
+
+		// Emit (lines 220-238): the emit is the action —
+		// an unclaimed cast has no fallback.
+		ev := &SpellOnObjectEvent{
+			Player:      p,
+			Object:      obj,
+			ObjectID:    obj.ID(),
+			SpellWidget: int(msg.SpellWidget),
+			SpellChild:  msg.SpellChild,
+			SpellItemID: msg.SpellItemID,
+			SpellID:     resolveSpellID(deps, int(msg.SpellWidget), msg.SpellChild, msg.SpellItemID),
+			Location:    objLoc,
+		}
+		if deps.SpellHooks.EmitSpellOnObject != nil {
+			deps.SpellHooks.EmitSpellOnObject(ev)
+		}
+	}
+
+	target := game.ObjectTarget{
+		ID:           obj.ID(),
+		Location:     obj.Location(),
+		Type:         obj.Type(),
+		Face:         obj.Face(),
+		SizeX:        def.SizeX(),
+		SizeY:        def.SizeY(),
+		BaseSizeX:    base.SizeX(),
+		BaseSizeY:    base.SizeY(),
+		BlockingMask: def.BlockingMask(),
+		Name:         def.Name(),
+		Interactions: def.Interactions(),
+	}
+	p.MovementQueue().WalkToObject(target, arrival, 0, cycle, game.WalkToObjectHooks{
+		Route:       translateRouteHook(deps, p, obj, def, 0),
+		StillStands: stillStands,
+	})
 	return true
 }
 

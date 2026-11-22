@@ -47,14 +47,17 @@ import "fmt"
 // Opcodes with no listener behind them have no decoder here even when
 // a branch exists: EXAMINE_NPC (9) and EXAMINE_LOC (85) are answered
 // directly in the NetworkBuilder dispatch (NetworkBuilder.ts
-// lines 1284-1307), and BANK_MOVE (245) and the world-entity opcodes
-// (220-225) reach the Bank system or PluginManager directly, never a
-// file in net/packet/impl/. Two former members of that group DO have
-// decoders now: TRADE_ACTION (180) decodes in trade.go, and the
-// clan/friends/private/chat-filter/report opcodes (181, 196-199)
-// decode below (DecodeClanChannelAction and friends), because the
-// listeners package routes them to the social-packet emit (phase 19)
-// instead of leaving them unrecognized.
+// lines 1284-1307), and the world-entity opcodes (220-225) reach the
+// PluginManager directly, never a file in net/packet/impl/. Former
+// members of that group DO have decoders now: TRADE_ACTION (180)
+// decodes in trade.go, the clan/friends/private/chat-filter/report
+// opcodes (181, 196-199) decode below (DecodeClanChannelAction and
+// friends), because the listeners package routes them to the
+// social-packet emit (phase 19) instead of leaving them
+// unrecognized, and the bank opcodes (243-245) decode below
+// (DecodeBankDepositInventory, DecodeBankDepositEquipment,
+// DecodeBankMove), because the listeners package routes them to the
+// bank seam (phase 46) instead of leaving them unrecognized.
 
 // unsignedItemID mirrors unsignedItemId (ClientProtocol.ts lines 377-379):
 // an item id written as two unsigned bytes, with 65535 (the client's -1)
@@ -1499,6 +1502,79 @@ func DecodeInventoryMove(payload []byte) (InventoryMove, error) {
 		return InventoryMove{}, trailingErr("INVENTORY_MOVE", r)
 	}
 	return InventoryMove{From: int(from), To: int(to), WidgetID: 3214}, nil
+}
+
+// DecodeBankDepositInventory decodes the bank deposit-inventory
+// opcode (CLIENT_BANK_DEPOSIT_INVENTORY, 243, fixed length 0,
+// ClientProtocol.ts lines 934-936): the packet carries no
+// fields — the deposit-all itself is the message. A non-empty
+// payload is malformed, as for the other fixed-length-0
+// decodes (see DecodeInterfaceClose).
+func DecodeBankDepositInventory(payload []byte) error {
+	if len(payload) != 0 {
+		return trailingErr("BANK_DEPOSIT_INVENTORY", NewReader(payload))
+	}
+	return nil
+}
+
+// DecodeBankDepositEquipment decodes the bank deposit-equipment
+// opcode (CLIENT_BANK_DEPOSIT_EQUIPMENT, 244, fixed length 0,
+// ClientProtocol.ts lines 934-936): the packet carries no
+// fields — the deposit-all itself is the message. A non-empty
+// payload is malformed, as for the other fixed-length-0
+// decodes (see DecodeInterfaceClose).
+func DecodeBankDepositEquipment(payload []byte) error {
+	if len(payload) != 0 {
+		return trailingErr("BANK_DEPOSIT_EQUIPMENT", NewReader(payload))
+	}
+	return nil
+}
+
+// BankMove is one decoded "bank_move" message (CLIENT_BANK_MOVE,
+// 245, variable length, ClientProtocol.ts lines 934-936):
+// the source and target display slots, the mode byte (1 =
+// insert, anything else = swap), and the destination tab when
+// the packet carries one. Tab is absent (HasTab false) when
+// the packet ends after the mode byte: TS leaves the field
+// undefined and the move stays in the current tab.
+type BankMove struct {
+	From   int
+	To     int
+	Insert bool
+	Tab    int
+	HasTab bool
+}
+
+// DecodeBankMove decodes BANK_MOVE: from short, to short, mode
+// byte, and an optional tab byte. The mode byte maps 1 to
+// insert and anything else to swap (NetworkBuilder.ts:860-878).
+// The packet is variable-length, so trailing bytes after the
+// tab are ignored, as for the other variable-length decodes
+// (see the file header). A payload shorter than the from/to/
+// mode fields errors with ErrUnexpectedEnd.
+func DecodeBankMove(payload []byte) (BankMove, error) {
+	r := NewReader(payload)
+	from, err := r.Short()
+	if err != nil {
+		return BankMove{}, err
+	}
+	to, err := r.Short()
+	if err != nil {
+		return BankMove{}, err
+	}
+	mode, err := r.Byte()
+	if err != nil {
+		return BankMove{}, err
+	}
+	out := BankMove{From: int(from), To: int(to), Insert: mode == 1}
+	if r.Remaining() > 0 {
+		tab, err := r.Byte()
+		if err != nil {
+			return BankMove{}, err
+		}
+		out.Tab, out.HasTab = int(tab), true
+	}
+	return out, nil
 }
 
 // WidgetAction is one decoded "widget_action" message, from either the

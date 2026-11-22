@@ -8,19 +8,106 @@ findings) lives outside this repository; status values below mean:
 ported, gaps listed), **NOT STARTED** (absent — nothing here
 pretends otherwise).
 
-Last updated: 2026-11-21 (phase 44 run: Crafting skill —
-core loop + all 12 sub-units, `crafting:spun` producer for
-Fletching's spool, live-verified in 8 smoke legs, 68 of 71
-checks passing (the 3 failures are a corrected leg premise,
-not a port bug — see the phase-44 paragraph). 4,946 tests
-passing, 27 packages. Quests are postponed per Tyler's
+Last updated: 2026-11-22 (phase 46 run: Bank — player-facing
+banking (open at booths and bankers, deposit/withdraw, bank
+interface), live-verified in 7 smoke legs, 44 of 44 checks
+passing; the banker leg needed two live-found engine fixes
+(the `canInteractWithUnreachableNpc` counter branch, then
+the NPC click path's switch from `WalkToTile` to
+`WalkToEntity`) — see the phase-46 paragraph. 5,048 tests
+passing, 28 packages. Quests are postponed per Tyler's
 2026-11-16 instruction (Doric's Quest picked but deferred);
 Tyler decided 2026-11-17: combat leftovers first, then
 adding all skills — see "Next modules". Tyler picked Magic
-as phase 45 on 2026-11-21 18:11 PST.)
+as phase 45 on 2026-11-21 18:11 PST; Magic is PAUSED
+mid-port and Bank jumped the queue (Tyler, 2026-11-21
+20:52 PST); Magic resumes after Bank.)
 
 ## What was verified in this run
 
+- Phase 46 (`go build ./...`, `go vet ./...`, `gofmt -l .`:
+  clean. `CGO_ENABLED=0 go build ./...`: clean. 852 `.go`
+  files, 28 packages (new `internal/content/bank`, 2 hub
+  families firable — `onButtonClick` + `onButton`, 63/108;
+  the tree also carries the paused Magic work's 2 families,
+  `onSpellCast` + `onSpellOnObject`, in the count — see the
+  hub row).
+- Phase 46 `go test ./... -p 1 -count=1 -v`: all 28 packages
+  pass (5,048 passing test cases: 3,845 top-level + 1,203
+  subtests, 0 failures, 0 skips — 4,946 from phase 44 + 102
+  new: 81 top-level across the bank test files
+  (`internal/content/bank/bank_test.go` 19,
+  `internal/game/bankflows_test.go` 25,
+  `cmd/server/bankopen_test.go` 4,
+  `internal/game/bankstate_test.go` 6,
+  `internal/game/status_test.go` 4,
+  `internal/listeners/bank_test.go` 4,
+  `internal/plugins/buttons_test.go` 8,
+  `internal/protocol/decode_bank_test.go` 3,
+  `internal/session/interface_bankmount_test.go` 4,
+  `internal/game/movement_counter_test.go` 4) and 21 new
+  subtests (18 in the listeners bank tests, 3 in updated
+  listener wiring tests); the temporary phase-46 probe test
+  (`cmd/server/probe_booth_clip_test.go`, real-cache clip
+  probe) was deleted after use.
+- Phase 46 `go test -race ./...`: the coordinator's first
+  full run failed only on the known §20 race-load timing
+  issue in `cmd/server`
+  (`TestShutdownEngineDrivenSavesWalkedPosition`: "timed
+  out waiting for walk arrival", no DATA RACE); a re-run of
+  `cmd/server` with `-race` passed clean (exit 0, no DATA
+  RACE warnings). The parent's first full run failed only
+  on the known `TestEngineTicksAtRate` timing flake in
+  `internal/game` (TickCount 3 over ~60 ms, no DATA RACE);
+  a re-run of `internal/game` with `-race` passed clean
+  (exit 0, no DATA RACE warnings).
+- Live phase-46 smoke tests (throwaway harness in
+  `/home/hatch/smoke46/`, seven modes driving a real
+  WebSocket client against the real server binary + real
+  rev-242 cache from a temp root outside the repo; legs run
+  singly, 44 of 44 checks passing): open-booth PASS 7/7
+  (Bank option 2 on booth 10355 at (3091,3243): interfaces
+  12 + 15 mounted, varp 548 = 1, script 917, bank snapshot
+  capacity 1410, varbit 12393 = 1, player adjacent at
+  (3092,3243)), deposit PASS 10/10 (deposit-1 copper, -5
+  trout, -all copper via IF_BUTTONn on side inventory
+  (15,3): ops 1/4/8; save confirms bank 10 copper + 5
+  trout, inventory empty), withdraw PASS 10/10
+  (withdraw-1/-5 trout, -all copper via IF_BUTTONn on the
+  bank grid (12,12): ops 2/3/7; save confirms), persist
+  PASS 3/3 (deposit-all, logout, save holds 10 copper,
+  relogin + reopen, snapshot still 10 copper), full PASS
+  5/5 (full inventory + 5 trout in bank, withdraw-1
+  refused with "You don't have enough inventory space.",
+  save confirms), close PASS 2/2 (IF_CLOSE: varp 548 = 0,
+  varbit 12393 = 0), open-banker PASS 7/7 (Bank option 3
+  on banker 1618 at (3090,3243): same mounts/varps/snapshot
+  as the booth leg; player ends at the counter tile
+  (3092,3243), within the interact radius). Two live-found
+  engine fixes landed in this phase (both TS-grounded, see
+  gap 28): (a) `canInteractWithUnreachableNpc`
+  (`MovementQueue.ts:1923-1928`) ported in
+  `internal/game/movement_queue.go` — an NPC across a
+  counter interacts from the route end within radius 2
+  with a clear projectile ray; (b) the NPC click path
+  (`internal/listeners/npc.go`) switched from `WalkToTile`
+  + `ReachedObj` to the queue's `WalkToEntity` at range 1
+  (NPCOptionPacketListener.ts:78-93) — the old shape could
+  never arrive at a counter NPC, so the first fix alone
+  left the banker leg failing with "I can't reach that!".
+  The probe work that found (b): a real-cache clip probe
+  proved the booth tile (3091,3243) clip 0x4120 blocks
+  neither the westward nor the eastward ray, and the
+  `WalkToEntity` counter path runs against the real clips —
+  so the refusal had to come from the click path, not the
+  ray. Harness fixes (harness-side, not port bugs): the
+  bank mounts are WIDGET_OPEN_SUB (103), not WIDGET_OPEN
+  (100); the open-leg position check wrongly demanded the
+  player stay at spawn; non-stackable seeds must spread
+  one per slot; the snapshot recorder must reset on a new
+  snapshot. One leg-check correction: the banker leg's
+  adjacency check now accepts the counter tile (radius 2),
+  since no adjacent tile is reachable by design.
 - Phase 44 (`go build ./...`, `go vet ./...`, `gofmt -l .`:
   clean. `CGO_ENABLED=0 go build ./...`: clean. 835 `.go`
   files, 27 packages (new `internal/content/crafting`, 26
@@ -913,8 +1000,8 @@ as phase 45 on 2026-11-21 18:11 PST.)
 | P2 | HTTP extras: `ContentApi`, `GatewayTarget`, `/regions` routes | `internal/session` (`gateway.go`), `cmd/server` (wiring) | PARTIAL (phase 37: `GatewayTarget` DONE — `GET /gateway/jav_config.ws` byte-exact vs TS (30 lines, `param=25` = cache revision, host from `PUBLIC_HOST` or 127.0.0.1, warn-once on invalid host) + `GET /gateway/worldlist.ws` one-world binary (members flag from the world definition, type flags 0 / activity `tsps` — the Go world definition carries no world-type source, which is the TS default), both live-verified against the real rev-242 cache incl. members/non-members and `PUBLIC_HOST`; `ContentApi` (`/api/*`) and the `/regions` routes still NOT STARTED — handler 404s them) |
 | P2 | Interface runtime: `Player` interface id, `PacketSender` interface mounts, `InterfaceLayoutRegistry`, `InterfaceActionClickOpcode`, entered-amount/syntax prompts, the live varp/varbit store | `internal/game` (interface id + close gate, entered actions), `internal/session` (mount tracking + sender surface, varp store), `internal/definition` (layout open dispatch), `internal/listeners` (action dispatch, prompt answers, close case), `internal/plugins` (interface families), `cmd/server` (wiring) | DONE (phase 18, live-verified: interface open/close/layering + close-on-movement/logout/death + layout open dispatch on all 7 surfaces + action dispatch to hub hooks with prompt-first order + entered-amount/syntax prompts + varp/varbit store with change detection, varbit packing, and replay; session-only, nothing persists; `VarManager` transform plumbing, `registerCustomInterface`, bank interface flows, and the per-player vars seam are gaps — see notes) |
 | P2 | Clans/social: `PlayerRelations`, social-packet dispatch, friends-chat-snapshot + clan encoders | `internal/game` (relations, names, chat gate), `internal/protocol` (social decoders/encoders), `internal/session` (social senders), `internal/listeners` (social dispatch), `internal/persist` (relations ownership), `internal/plugins` (social-packet variants), `cmd/server` (wiring) | DONE (phase 19, live-verified: whole `PlayerRelations` port + live chat gate + all 8 social-packet kinds emitted to the hub + snapshot/clan encoders + relations owned save state + logout presence-offline; friends-chat channels + the clan system are plugin content (FriendsList/Clans, NOT ported — the engine unlocks them); the legacy friend/ignore presence sends are no-ops, exactly as in TS (`PlayerSession.write` is a no-op upstream) — live presence comes from the snapshot, which content sends; chat modes session-only — see notes) |
-| P3 | Plugin hub: `PluginManager`, `PluginTypes` | `internal/plugins` + `cmd/server` (`pluginwiring.go`) | DONE (compile-time registry, dependency-ordered loading, config-declaration validation, world.json switches, members-gating, lifecycle + custom-event + command/social-packet + object-interaction + dialogue + zone + combat + shop/trade + interface + skills + world-entity-interaction hooks with per-hook error isolation, gate contracts, scoped core surface, login extensions; the social-packet family fires all 8 kinds since phase 19 (same family, not a new one — the count is unchanged); onCanAttack became firable in phase 26; onSpellDisabled + onSpellRuneBypass became firable in phase 27; onShouldDropItemsOnDeath + onShouldKeepItemOnDeath + onPlayerDefeated + onPlayerDeathItemDrop + onPlayerDeathDrops became firable in phase 28 (51 of 108); the onItemAction family became firable in phase 32 (onItemAction/onItemActionNamed/onItemFirstAction/onCanUseItem, 54 of 108); the onNpcClick family became firable in phase 33 (onNpcClick, with the NPC remains-delay + transform seams in the death flow) and the onItemOnItem family became firable in phase 33 (onItemOnItem/onItemOnItemNamed, riding INVENTORY_USE_ON kind 4 — there is no separate item-on-item opcode), and the onNpcInteraction family became firable in phase 35 (onNpcInteraction, name hooks after the onNpcClick bindings — TS order, `NPCOptionPacketListener.ts:122/:132` — with the `DefinitionName`/`Action`/`Actions` fields on the hub event; `OnNpcsInteraction`/`OnBeforeNpcInteraction`/`OnNpcRoute` stay table-only), and the onAnyNpcInteraction family became firable in phase 41 (onAnyNpcInteraction, the generic list last after the name hooks — TS order, `PluginManager.ts:1246-1263` — with `Hub.AddNpcClickHook`/`Hub.AddAnyNpcInteractionHook` engine installs that bypass the load seal so Shopkeepers bindings can be installed post-Load; `OnNpcsInteraction`/`OnBeforeNpcInteraction`/`OnNpcRoute` stay table-only), and the onSpellOnItem family became firable in phase 43 (onSpellOnItem, fired from castSpellOnItem in the MagicOnItem listener through the listeners' `SpellHooks.EmitSpellOnItem` seam wired in spellwiring.go; Superheat Item is its first consumer), 59 of 108; 49 of 108 hook families have no registration method yet — documented in the unfired-family table with the missing system named — and 29 of 95 non-hook members are ported, and 12 of 191 Core members — see notes; hub-count correction in phase 31: earlier versions of this document said 53/108, counting registration *methods* as *families* — Go has 63 `Api.On*` methods but four are named overloads of already-counted families (`OnObjectInteractionNamed`, `OnItemOnObjectNamed`, `OnItemActionNamed`, `OnItemOnItemNamed`), so 59 distinct families are firable (63 methods) and 49 are table-only; `hooks.go`'s header says fifty-nine (updated in phase 43; the phase-35 plan's "5 named overloads" was wrong — recount: exactly 4 `*Named` methods) |
-| P3 | All `plugins/` content (2,907 JS files, 789,355 lines) | Go packages under `internal/content/` | PARTIAL (15 of 577 entries ported: DateMinutes (phase 10), GracefulOutfit + WornWeights (phase 22), LumbridgeGuide (phase 23), SeekingArrows (phase 24), Woodcutting (phases 32–33 — core loop + all sub-units except the Guild, which needs Tyler's `woodcutting-guild.json` import approval), Fletching (phase 34 — full skill: Shared loop, Recipes, Spool, Diaries, CreationMenu seam, all live-verified), Fishing (phase 35 — core loop + 8 of 10 sub-units, MinnowPlatform / Gita exchange / Guild door deferred, live-verified in 4 modes), Cooking (phase 36 — full skill: Cookers, Recipes, Wine, Churn, SacredEel, LeapingFish, Gnome, live-verified on fire/range/wine legs), AdminCommands (phase 38 — `::item` only, the first registered command, live-verified: admin spawn + denial path), WildernessDitch (phase 40 — `Cross` on object 23271 with the ForceMovement glide + click delay, live-verified: south/north/turn crossings + the wall leg), Shopkeepers (phase 41 — `shops.json` npcInteractions bindings via onAnyNpcInteraction + 19 item / 13 point currencies, live-verified: shop-open/buy/sell/shared/tokkul legs, 32 checks), Mining (phase 42 — full skill: core loop + all 8 sub-units, live-verified: copper/tin, depletion, full-inventory, walk-away legs, 18 checks), Smithing (phase 43 — full skill: smelting + anvil + cannonballs + godswords + dragon shields + spears + Superheat, new onSpellOnItem seam, live-verified: smelt/smith/menu/walkaway/ore-on-furnace/bar-on-anvil/full legs, 38 checks), Crafting (phase 44 — full skill: core loop + all 12 sub-units, `crafting:spun` producer for Fletching's spool, live-verified: jewellery/spinning/cutting/leather/pottery/walkaway/fall-through legs, 68 of 71 checks — the 3 failures are a corrected leg premise, see the phase-44 paragraph), all live-verified; the rest per `CONTENT_MIGRATION_PLAN.md`, piece by piece with Tyler's direction; no wholesale port) |
+| P3 | Plugin hub: `PluginManager`, `PluginTypes` | `internal/plugins` + `cmd/server` (`pluginwiring.go`) | DONE (compile-time registry, dependency-ordered loading, config-declaration validation, world.json switches, members-gating, lifecycle + custom-event + command/social-packet + object-interaction + dialogue + zone + combat + shop/trade + interface + skills + world-entity-interaction hooks with per-hook error isolation, gate contracts, scoped core surface, login extensions; the social-packet family fires all 8 kinds since phase 19 (same family, not a new one — the count is unchanged); onCanAttack became firable in phase 26; onSpellDisabled + onSpellRuneBypass became firable in phase 27; onShouldDropItemsOnDeath + onShouldKeepItemOnDeath + onPlayerDefeated + onPlayerDeathItemDrop + onPlayerDeathDrops became firable in phase 28 (51 of 108); the onItemAction family became firable in phase 32 (onItemAction/onItemActionNamed/onItemFirstAction/onCanUseItem, 54 of 108); the onNpcClick family became firable in phase 33 (onNpcClick, with the NPC remains-delay + transform seams in the death flow) and the onItemOnItem family became firable in phase 33 (onItemOnItem/onItemOnItemNamed, riding INVENTORY_USE_ON kind 4 — there is no separate item-on-item opcode), and the onNpcInteraction family became firable in phase 35 (onNpcInteraction, name hooks after the onNpcClick bindings — TS order, `NPCOptionPacketListener.ts:122/:132` — with the `DefinitionName`/`Action`/`Actions` fields on the hub event; `OnNpcsInteraction`/`OnBeforeNpcInteraction`/`OnNpcRoute` stay table-only), and the onAnyNpcInteraction family became firable in phase 41 (onAnyNpcInteraction, the generic list last after the name hooks — TS order, `PluginManager.ts:1246-1263` — with `Hub.AddNpcClickHook`/`Hub.AddAnyNpcInteractionHook` engine installs that bypass the load seal so Shopkeepers bindings can be installed post-Load; `OnNpcsInteraction`/`OnBeforeNpcInteraction`/`OnNpcRoute` stay table-only), and the onSpellOnItem family became firable in phase 43 (onSpellOnItem, fired from castSpellOnItem in the MagicOnItem listener through the listeners' `SpellHooks.EmitSpellOnItem` seam wired in spellwiring.go; Superheat Item is its first consumer), 59 of 108; the onButtonClick + onButton families became firable in phase 46 (fired by Hub.EmitButtonClick from the widget-action fallthrough's simple-click fallback; the Bank content is the first consumer), and the onSpellCast + onSpellOnObject families became firable in the paused Magic work in the same tree (fired through the listeners' SpellHooks seams — wired, not live-verified), 63 of 108; 45 of 108 hook families have no registration method yet — documented in the unfired-family table with the missing system named — and 29 of 95 non-hook members are ported, and 12 of 191 Core members — see notes; hub-count correction in phase 31: earlier versions of this document said 53/108, counting registration *methods* as *families* — Go has 63 `Api.On*` methods but four are named overloads of already-counted families (`OnObjectInteractionNamed`, `OnItemOnObjectNamed`, `OnItemActionNamed`, `OnItemOnItemNamed`), so 63 distinct families are firable (67 methods) and 45 are table-only; `hooks.go`'s header says sixty-three (updated in phase 46; the phase-35 plan's "5 named overloads" was wrong — recount: exactly 4 `*Named` methods). The +4 since phase 43 split two and two: Bank (phase 46) made `onButtonClick` + `onButton` firable (fired by Hub.EmitButtonClick from the widget-action fallthrough's simple-click fallback), and the paused Magic work in the same tree made `onSpellCast` + `onSpellOnObject` firable (wired through the listeners' SpellHooks seams — registration + emit + dispatch exist, but Magic is uncommitted and NOT live-verified; the parent recounts at Magic resume) |
+| P3 | All `plugins/` content (2,907 JS files, 789,355 lines) | Go packages under `internal/content/` | PARTIAL (16 of 577 entries ported: DateMinutes (phase 10), GracefulOutfit + WornWeights (phase 22), LumbridgeGuide (phase 23), SeekingArrows (phase 24), Woodcutting (phases 32–33 — core loop + all sub-units except the Guild, which needs Tyler's `woodcutting-guild.json` import approval), Fletching (phase 34 — full skill: Shared loop, Recipes, Spool, Diaries, CreationMenu seam, all live-verified), Fishing (phase 35 — core loop + 8 of 10 sub-units, MinnowPlatform / Gita exchange / Guild door deferred, live-verified in 4 modes), Cooking (phase 36 — full skill: Cookers, Recipes, Wine, Churn, SacredEel, LeapingFish, Gnome, live-verified on fire/range/wine legs), AdminCommands (phase 38 — `::item` only, the first registered command, live-verified: admin spawn + denial path), WildernessDitch (phase 40 — `Cross` on object 23271 with the ForceMovement glide + click delay, live-verified: south/north/turn crossings + the wall leg), Shopkeepers (phase 41 — `shops.json` npcInteractions bindings via onAnyNpcInteraction + 19 item / 13 point currencies, live-verified: shop-open/buy/sell/shared/tokkul legs, 32 checks), Mining (phase 42 — full skill: core loop + all 8 sub-units, live-verified: copper/tin, depletion, full-inventory, walk-away legs, 18 checks), Smithing (phase 43 — full skill: smelting + anvil + cannonballs + godswords + dragon shields + spears + Superheat, new onSpellOnItem seam, live-verified: smelt/smith/menu/walkaway/ore-on-furnace/bar-on-anvil/full legs, 38 checks), Crafting (phase 44 — full skill: core loop + all 12 sub-units, `crafting:spun` producer for Fletching's spool, live-verified: jewellery/spinning/cutting/leather/pottery/walkaway/fall-through legs, 68 of 71 checks — the 3 failures are a corrected leg premise, see the phase-44 paragraph), Bank (phase 46 — player-facing banking: open at booths + bankers, deposit/withdraw, bank interface, placeholders, tabs, search, new onButtonClick/onButton hub families; live-verified: open-booth/deposit/withdraw/persist/full/close/open-banker legs, 37 of 37 checks — see the phase-46 paragraph), all live-verified; the rest per `CONTENT_MIGRATION_PLAN.md`, piece by piece with Tyler's direction; no wholesale port) |
 | P3 | Bots: `plugins/bots/` + bot runtime | undecided | NOT STARTED |
 | P3 | WebRTC transport | undecided | NOT STARTED |
 | P3 | Browser host: `BrowserHostHttpBridge`, IndexedDB persistence | undecided | NOT STARTED |
@@ -2483,7 +2570,7 @@ unrecognized.
 | ItemActionPacketListener | 240 + widget inventory path | implemented: all gates, walk-to cancellation, equip fallback reusing `equip()` (interface 3214 only), widget-op resolution (op 10 Examine, op 1 shift-click, ops 2/3/4/6/7 -> actions 1-5), drop-option detection; plugin actions stay drops (plugin-only); hard-coded special cases 9520/2545/12873/12875/12879/12881/12883/12877 unhandled with gap comments; 9520/2545 messages wired through `sendMessage` since phase 12, interface removal exists since phase 18 but is not wired at these sites |
 | MagicOnItemPacketListener | 94 + 90 | decode-drop: spell system (spell-id resolution, CombatSpells table, validation) NOT STARTED; telegrab NOT STARTED |
 | MagicOnPlayerPacketListener | 32 | decode-drop: spell system NOT STARTED (no spell-id resolution, CombatSpells table, or validation exists; nothing invented) |
-| NPCOptionPacketListener | 76, 12, 34, 70, 57 + 75 | implemented (phase 14, combat option phase 16): all 5 click types walk + dispatch; gates: hitpoints > 0, slot holds the NPC, ≤ 24 tiles same plane; walk reuses `WalkToTile` + `ReachedObj` (documented deviations: 1×1 reach, no pursuit, no projectile-clip term); arrival re-validates, then the combat branch (the "attack" option on an attackable NPC: `emitNpcAttackOption` gate, autocast clear, `Combat.attack` — the combat process routes the attacker in, so the combat branch never walks) -> the dialogue seam (Talk-to only) -> interaction emit -> bank gap -> "Nothing interesting happens." fallback; claimed clicks emit `npc:operated`; spell-on-NPC (75) decode-drop (spell system NOT STARTED); item-on-NPC (36) decode-drop (no item-on-NPC dispatch; walk-to-entity exists since phase 17 for the trade path) |
+| NPCOptionPacketListener | 76, 12, 34, 70, 57 + 75 | implemented (phase 14, combat option phase 16): all 5 click types walk + dispatch; gates: hitpoints > 0, slot holds the NPC, ≤ 24 tiles same plane; walk uses the queue's `WalkToEntity` at range 1 (phase 46 — was `WalkToTile` + `ReachedObj`; the old shape could never arrive at a counter NPC; range > 1 keeps the old shape); arrival re-validates, then the combat branch (the "attack" option on an attackable NPC: `emitNpcAttackOption` gate, autocast clear, `Combat.attack` — the combat process routes the attacker in, so the combat branch never walks) -> the dialogue seam (Talk-to only) -> interaction emit -> bank branch (claimed by the Bank content, phase 46) -> "Nothing interesting happens." fallback; claimed clicks emit `npc:operated`; spell-on-NPC (75) decode-drop (spell system NOT STARTED); item-on-NPC (36) decode-drop (no item-on-NPC dispatch; walk-to-entity exists since phase 17 for the trade path) |
 | ObjectActionPacketListener | 96, 28, 42, 38, 51 + 231 | implemented: hitpoints/busy gates (`busy()` degenerates to the hitpoints term), packet x/y + player's plane, registry lookup (miss = silent return; the DEVELOPER notice fires through the registry's rights seam), definition via `forPlayer` on the object's id, exact click-type/action normalization (valid 1-5 ignores action text; otherwise trim+lowercase match against interactions), route event before mobility checks, walk-to-object with the TS reach rectangle + repath rules + "I can't reach that!" failure, arrival still-stands re-check by packet id + click tile, dispatch order before-hooks (claim skips mains) -> merged generic + `id:clickType` + name hooks in registration order, stop once handled -> `object:operated` emit, no-handler fallback is TS-exact silence; the deck-object interaction lookup (sailing), the `bank` option (Bank.open/status, not the runtime — the phase 18 runtime exists), facing, and the mounted-decoration reach term are gaps |
 | PickupItemPacketListener | 102, 43, 103, 56, 82 + 232 | implemented: `takeOperation`/`getOperableGroundItem` (stack-id path + own -> unowned -> any preference, registration order), `canOperate`/`canInteract`, walk-to arrival via `WalkToGroundItem` + `ReachedObj`, `transferToInventory` (capacity via `GetAddableAmount`, before/after matching-amount credit, full -> deregister, partial -> `OldAmount` + decrement + ALTER, pickup-replacement credit, meta preserved), 300ms throttle as a cycle stamp; `busy()` degenerates to the hitpoints term, private-area checks degenerate to equal, plugin pickup/take/reward/taken events -> no-hooks defaults, "I can't reach that!" text wired through `sendMessage` since phase 12; reach animation + sounds are gaps |
 | Examine (dispatch-inline cases, not a listener file) | 9 (NPC), 85 (object), + inventory/ground/worn examine routes | implemented: NPC examine (typed, type 28) + object examine (typed, type 29, full multi-loc rule with the `world:object-examine` plugin intercept) + item examine (examine-or-name text) + ground/worn routes + "Nothing interesting happens." + the warn-once backpack message; the item-examine price line is live since phase 18 (value/GE/alch accessors ported in phase 17; the settings gate reads the varp store); unknown ids answer "It's nothing special." |
@@ -4283,6 +4370,51 @@ pick is Tyler's. Verification counts are unchanged from phase 24
     live, not the engine). (n) Zenyte gem-cut XP is 50
     in `crafting.json` (OSRS says 200) — ported as-is
     per the verbatim-import rule.
+
+28. Phase 46 residual gaps (Bank; all documented at the
+    port sites, none silent): (a) Bank PIN NOT STARTED
+    (`emitCanBank` gate degrades to proceed — the bank
+    opens without a PIN, as TS does by default). (b)
+    BankSpace capacity always 1410 (the F2P/members
+    capacity curve needs `bank-space.json`, flagged for
+    Tyler's import approval — see the phase-46 plan §5).
+    (c) BankDepositBooth (interface 192, deposit-only)
+    NOT STARTED. (d) Platinum-token / rune-pouch-note
+    exchanges, banknote un-noting on the banker, and
+    Grand Exchange "Collect" NOT STARTED. (e)
+    Configure-Charges op 9 NOT STARTED; incinerator
+    destroy is an event only. (f) `Bank.withoutLimit`
+    approximated via merge-then-grow. (g) Save-request
+    hints skipped (no bank save seam). (h)
+    `releaseInterfaceInventories` on close is a session
+    gap. (i) `bank:withdrawn-items` approximates item
+    identity by id presence. (j) The frozen
+    `isOnEntityRouteEnd` dry run (MovementQueue.ts:1542)
+    is still degenerate: a frozen player at a counter
+    gets "I can't reach that!" instead of the route-end
+    branch. (k) Talk-to on a banker is handler-only: the
+    banker transcript is absent (`npc-dialogues.json` is
+    still the 3-byte `{}` stub — the verbatim import is
+    queued as the NPC-dialogs phase). (l) Tabs, search,
+    and drag are unit-covered only, not observed live
+    (the live legs cover open/deposit/withdraw/persist/
+    full/close/banker). (m) LIVE-FOUND ENGINE FIXES in
+    this phase, both TS-grounded and live-verified via
+    the banker leg: `canInteractWithUnreachableNpc`
+    (MovementQueue.ts:1923-1928) ported in
+    `internal/game/movement_queue.go`, and the NPC click
+    path (`internal/listeners/npc.go`) switched from
+    `WalkToTile` + `ReachedObj` to the queue's
+    `WalkToEntity` at range 1 (NPCOptionPacketListener
+    .ts:78-93) — the old shape could never arrive at a
+    counter NPC. Unit tests in
+    `internal/game/movement_counter_test.go` (4 tests:
+    immediate + arrival-tick + blocked-ray + guards);
+    the temporary real-cache probe test was deleted
+    after use. Both banker tiles were verified across
+    runs (the harness picks a random 1618: (3090,3243)
+    ending (3092,3243), and (3090,3242) ending
+    (3092,3242)).
 
 ## Next modules, in priority order
 

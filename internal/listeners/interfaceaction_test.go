@@ -24,6 +24,8 @@ type recordingInterfaceHooks struct {
 	// closeResult is the handled answer for EmitInterfaceClose;
 	// widgetResult and worldInputResult likewise.
 	widgetResult, worldInputResult, closeResult bool
+	buttonClicks                                []ButtonClickEvent
+	buttonResult                                bool
 }
 
 func (h *recordingInterfaceHooks) RefusesWhileBusy(buttonID int) bool {
@@ -50,6 +52,11 @@ func (h *recordingInterfaceHooks) EmitInterfaceClose(ev *InterfaceCloseEvent) bo
 	return h.closeResult
 }
 
+func (h *recordingInterfaceHooks) EmitButtonClick(ev *ButtonClickEvent) bool {
+	h.buttonClicks = append(h.buttonClicks, *ev)
+	return h.buttonResult
+}
+
 func (h *recordingInterfaceHooks) hooks() InterfaceHooks {
 	return InterfaceHooks{
 		RefusesWhileBusy:         h.RefusesWhileBusy,
@@ -57,6 +64,7 @@ func (h *recordingInterfaceHooks) hooks() InterfaceHooks {
 		EmitWidgetAction:         h.EmitWidgetAction,
 		EmitWorldInput:           h.EmitWorldInput,
 		EmitInterfaceClose:       h.EmitInterfaceClose,
+		EmitButtonClick:          h.EmitButtonClick,
 	}
 }
 

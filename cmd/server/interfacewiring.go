@@ -40,14 +40,16 @@ import (
 // session tests pin.
 //
 // DELIBERATELY UNSET (gaps, not oversights):
-//   - SetStatusNone: no PlayerStatus field exists in Go.
-//   - EndBankSearch: Go's Bank holds no search state.
 //   - GameframeRoot: the bootstrap's computed root is not
 //     retained on the session; the 161 default applies.
 //   - The varp store needs no wiring here: Worker 3's
 //     SetVarbitResolver installs the resolver, and the
 //     sender's SendVarp/SendVarbit calls record through the
 //     store NewSession creates.
+//
+// SetStatusNone and EndBankSearch were deliberately unset
+// until phase 46 (no PlayerStatus field / no bank search
+// state existed); both are wired below now.
 func installInterfaceRuntime(sess *session.Session, p *game.Player, store *definition.Store, shops *game.ShopManager, hub *plugins.Hub) {
 	if sess == nil {
 		return
@@ -86,6 +88,16 @@ func installInterfaceRuntime(sess *session.Session, p *game.Player, store *defin
 			}
 		},
 		SetCreationMenu: p.SetCreationMenu,
+		// Phase 46: the status field (status.go) and the bank
+		// search state (bankstate.go) both exist now.
+		SetStatusNone: p.SetStatusNone,
+		EndBankSearch: func(closedInterfaceID int) {
+			// PacketSender.ts:902-906: only the bank's own
+			// close ends a bank search.
+			if closedInterfaceID == game.BankMainInterfaceID {
+				game.BankCloseSearch(p)
+			}
+		},
 	}
 	if hub != nil {
 		deps.EmitInterfaceClosed = func(interfaceID int) {

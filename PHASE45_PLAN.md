@@ -1,0 +1,104 @@
+# Phase 45 — Magic: hub families + standard-book effects + Ancient combat + Enchant Jewellery
+
+## Status
+- Survey: DONE (three workers, 2026-11-21). Port: 4 workers dispatched in parallel (hub, utility consumers, Ancients, Enchant Jewellery). Integration + live verification pending.
+
+## 1. Survey (grounded, with file:line citations)
+
+### 1.1 Upstream scale
+- Upstream `magic/` engine: 5,230 lines TS. Standard book DONE in Go (Phase 27: 36 combat + Charge + 11 teleports + 6 utility, `internal/game/combat_spells_data.go`).
+- **No JSON data file exists for the spellbook engine.** All spell data is TS literals or cache spell objects. The only spell-adjacent JSON is the Lunar *crafting* table (`server/plugins/skills/data/crafting-spells.json`, 5,382 bytes, SHA-256 `8b8ba280661571bf09945ae561df607aa3b2a5fc9cb6bddd65256d9e49898e70`) — content, not engine.
+- Rune id key: 554 fire, 555 water, 556 air, 557 earth, 558 mind, 559 body, 560 death, 561 nature, 562 chaos, 563 law, 564 cosmic, 565 blood, 566 soul, 9075 astral, 21880 wrath.
+
+### 1.2 Ancient Magicks — 24 spells, NOT in Go
+- **16 combat** in `CombatSpells.ts:1720–2058` as `CombatAncientSpellExtend`, positional-arg constructors (castAnim, startGraphic, effectOnHitCalc, radius, projectile, endGraphic, maxHit, baseXP, itemsRequired, levelRequired, spellId, impactSound — `CombatSpells.ts:236–261`; base `CombatAncientSpell.ts:1–47`). Radius 0 Rush/Blitz, 1 Burst/Barrage. Effects: Smoke = 1-in-8 poison 10 (Rush/Burst) / 20 (Blitz/Barrage); Shadow = Attack drain 10% / 15%; Blood = heal 25% of damage; Ice = freeze 8/16/24/32 ticks.
+  - Smoke Rush 12939/50/13/30, Shadow Rush 12987/52/14/31, Blood Rush 12901/56/15/33, Ice Rush 12861/58/16/34, Smoke Burst 12963/62/17/36, Shadow Burst 13011/64/18/37, Blood Burst 12919/68/21/39, Ice Burst 12881/70/22/40, Smoke Blitz 12951/74/23/42, Shadow Blitz 12999/76/24/43, Blood Blitz 12911/80/25/45, Ice Blitz 12871/82/26/46, Smoke Barrage 12975/86/27/48, Shadow Barrage 13023/88/28/49, Blood Barrage 12929/92/29/51, Ice Barrage 12891/94/30/52. (ids/levels/max/XP; runes in `CombatSpells.ts:1720–2058`.)
+- **8 teleports** in `SpellTeleports.ts:63–102` (same Map shape as standard): Paddewwa 54/64, Senntisten 60/70, Kharyrll 66/76, Lassar 72/82, Dareeyak 78/88, Carrallanger 84/94, Annakarl 90/100, Ghorrock 96/106. Excluded this phase (need the teleport system, which does not exist in Go).
+- Autocast slots 31–46 already mapped in Go (`internal/game/autocasting.go:67-121`) and resolve nil until the spells register — registering the spells lights up autocast for free.
+
+### 1.3 Lunar — 33 engine entries + satellites, NOT in Go
+- `LunarSpells.ts` (855 lines). Levels/runes are NOT in TS: `LunarSpell.cacheRequirements()` reads them from the cache spell object (`LunarSpells.ts:168–176`); Go already has the accessor (`internal/cache/facade.go:1245–1268` `GetSpellRequirements` / `GetSpellByName`), so **no JSON import is needed**.
+- Self-cast (10): Bake Pie 65/60, Dream 79/82, Heal Group 95/124, Spellbook Swap 96/130, Humidify 68/65, Hunter Kit 71/70, Magic Imbue 82/86, Astral Contact (NPC Contact) 67/63, String Jewellery 80/83, Vengeance 94/112. Targeted (7): Energy Transfer 91/100, Heal Other 92/101, Stat Spy 75/76, Monster Examine 66/61, Plank Make 86/90, Stat Restore Pot Share 81/84, Boost Potion Share 84/88, plus Vengeance Other 93/108. Teleports (8) + group teleports (7): Moonclan 69/66 … Ice Plateau 89/96.
+- Gates: 40 max Defence to cast any Lunar spell and to switch to the book (`LunarSpells.ts:179–185`, `MagicSpellbook.ts:46–52`); Dream Mentor quest gates 7 spells; Lunar Diplomacy gates the book (`SpellbookLocks.ts:10–13`). Spellbook Swap: 2 minutes (200 ticks), ends on any paid cast, expiry checked per tick (`NetworkBuilder.ts:679`).
+- Vengeance (`EffectSpells.ts:99–127`): 40 Def, no duels, no double-arm, 30 s shared cooldown, anim 8316, graphic 726, XP 112. **Discrepancy to resolve at Lunar port time:** `EffectSpells.ts:207` lists Vengeance Other base XP as **10000** while `LunarSpells.ts:253` uses **108**; Go copied the 10000 verbatim (`combat_spells_data.go:398`).
+- Satellites (content, not engine): Cure Me/Other/Group (`plugins/combat/LunarCures.plugin.js`), Farming spells (`plugins/skills/farming/Spells.Farming.js`), Lunar crafting spells (`plugins/skills/craftingspells/Lunar.CraftingSpells.js` + `crafting-spells.json`).
+
+### 1.4 Arceuus — 42 distinct spells, NOT in Go
+- **10 combat** in `CombatSpells.ts:1475–1609` (`CombatArceuusSpell` / `CombatArceuusEffectSpell`, `CombatSpells.ts:82–177`): Ghostly Grasp 21826/35/12/22.5, Inferior Demonbane 20398/44/16/27, Skeletal Grasp 21829/56/17/33, Superior Demonbane 20399/62/23/36, Undead Grasp 21832/79/24/46.5, Dark Demonbane 20400/82/30/43.5, Mark of Darkness 20392/59/70, Lesser Corruption 10511/64/75, Greater Corruption 20762/85/95, Dark Lure 15303/50/60 (10.2 s cooldown).
+- **19 self-cast** in `ArceuusSpells.ts:152–230`: Ward of Arceuus 20763/73/83, Death Charge 15309/80/90, Degrime 15345/70/83, Shadow Veil 15344/47/58, Vile Vigour 15304/66/76, Demonic Offering 15346/84/175, Sinister Offering 8796/92/180, + Mark/Lesser/Greater + 9 Resurrect thralls (ids 25506–25514, lvl 38/57/76, XP 55/70/88, NPCs 10878–10886).
+- **Duplication:** Mark of Darkness, Lesser/Greater Corruption exist twice with different semantics — combat-target versions in `CombatSpells.ts:1547–1591` vs self-cast versions in `ArceuusSpells.ts` (Mark via `placeMark`: 3 ticks per base Magic, ×5 with purging staff 29594/29595). Port the *self-cast* versions as canonical; do not port both.
+- **12 teleports** in `ArceuusSpells.ts:231–247`: Library 6/9.5, Draynor Manor 17/16, Battlefront 23/19, Mind Altar 28/22, Respawn 34/27, Salve Graveyard 40/30, Fenkenstrain's 48/50, West Ardougne 61/68, Harmony Island 65/74, Cemetery 71/82, Barrows 83/90, Ape Atoll 90/100.
+- **4 reanimations** in `ArceuusItemSpells.ts` (89 lines): Basic 11997/16/32, Adept 2885/41/80, Expert 6208/72/138, Master 6888/90/170; head→NPC map `NPC_BY_HEAD` (23 heads, NPCs 7018–7039 + hellhound 11463).
+- Supporting files: `ArceuusOfferings.ts` (80 lines), `ArceuusThralls.ts` (110 lines), `ArceuusUtilities.ts` (39 lines), `ArceuusQuestLock.plugin.js` (A Kingdom Divided gates).
+
+### 1.5 Spellbook switching (all books)
+- `MagicSpellbook.ts:15–18` — interfaces: Normal 1151, Ancient 12855, Lunar 29999, Arceuus 39999. `changeSpellbook` (`MagicSpellbook.ts:40–68`): same-book refresh; Lunar needs 40 Def; resets autocast; emits `magic:spellbook-changed`. Quest gates in `SpellbookLocks.ts` (30 lines): Ancient ← Desert Treasure I, Lunar ← Lunar Diplomacy, Arceuus ← none (Tyss NPC). Switch entry points are content (`plugins/objects/Altars.plugin.js`, `Tyss.plugin.js`, Arcane Grimoire, Lunar Diplomacy reward, admin command) — unported.
+
+### 1.6 Spell-driven content (survey worker 2)
+- **Bolt Enchanting** (`plugins/skills/BoltEnchanting.plugin.js` 13 lines + `boltenchanting/Cast.BoltEnchanting.js` 172 lines): members, normal-book spell "Crossbow Bolt Enchantments", CreationMenu mode 3 max 10 sets, 10 bolts/set, anim 4462 / gfx 759 / sound 2921, 2-tick then 3-tick cadence. Table from `data/bolt-enchanting.json` (10 gems, Opal 4/9 XP … Onyx 87/97). Hook: `api.onSpellCast` (`Cast.BoltEnchanting.js:169`), requires `player.getSpellbook() === NORMAL`. Go seams: CreationMenu/task/inventory all exist; **blocked on onSpellCast (built this phase) + the JSON import (needs Tyler approval)**.
+- **Enchant Jewellery** (`EnchantJewellery.plugin.js` 7 lines + `Spells.EnchantJewellery.js` 285 lines): 7 standard-book spells cast on an item, repeat every 7 ticks, level-up popup pauses. Lvl-1 7/17.5 XP … Lvl-7 93/110 XP. **No data file** (inline `ENCHANT_SPELLS`, lines 162–259). Hook: `api.onSpellOnItem` (`Spells.EnchantJewellery.js:283`) — **already firable in Go** (proven by Superheat). All other seams exist. **In scope this phase.**
+- **Crafting Spells — Lunar** (`CraftingSpells.plugin.js` 14 lines + `craftingspells/Lunar.CraftingSpells.js` 194 lines + `Data.CraftingSpells.js` 20 lines): Spin Flax 76/75 XP, Tan Leather 78/81 XP (hard Fremennik Diary gate via `diary:is-complete`), Superglass Make 77/78 XP. All require 40 Defence + Lunar book. Hook: `api.onSpellCast`. **Blocked:** onSpellCast (built this phase) + diary system (does not exist in Go — Tan Leather) + `inventory.forceAdd` ground-drop overflow (does not exist in Go — Superglass). Spin Flax needs onSpellCast + Lunar book (Slice 3). Data: `crafting-spells.json` (see §1.1).
+- **Charge Orbs** (`craftingspells/ChargeOrbs.CraftingSpells.js` 118 lines): cast on matching obelisk, 1 unpowered orb + 3 cosmic + 30 elemental runes → charged orb; Water 56/66, Earth 60/70, Fire 63/73, Air 66/76 XP; repeat every 6 ticks. Hook: `api.onSpellOnObject`. **Blocked:** onSpellOnObject (built this phase) + `crafting-spells.json` import + Lunar book (Slice 3).
+- **Reanimation** (`plugins/skills/Reanimation.plugin.js` 63 lines): Prayer XP on killing a reanimated creature (23 entries, Goblin 130 … Dragon 1560, inline). Hooks: `api.onNpcDeath` (firable in Go) + `reanimation:head-consumed` (emitted by the cast side). **Rides with the Arceuus reanimation spells (Slice 4)**, not before — dead code until `ArceuusItemSpells.castOnItem` lands. Zealot's-robes save needs the `zealot` section of `bone-altars.json`.
+
+### 1.7 Go-side state (survey worker 3)
+- Hub: 59/108 firable families, 63 `Api.On*` methods. `onSpellCast` and `onSpellOnObject` table-only, no emit sites, no event types.
+- TS `onSpellCast`: event `PluginSpellCastEvent` `{player, spellName, spellWidget, spellItemId, opId?, handled}` (`PluginTypes.ts:790-800`); emit `PluginManager.emitSpellCast` (`PluginManager.ts:1987-1993`), hooks in order, **break on handled**. Emit site is the widget-action dispatch (`NetworkBuilder.ts:1060`, after autocast + Lunar widget action, before `handleSelf` handlers); `emitSpellCast` (`NetworkBuilder.ts:1804-1812`) resolves the name via `CacheDefinitions.getSpellName`, `opId: buttonNum ?? opId ?? 1`, only fires when a spell name resolves.
+- TS `onSpellOnObject`: event `PluginSpellOnObjectEvent` (`PluginTypes.ts:763-774`); emit `PluginManager.emitSpellOnObject` (`PluginManager.ts:1960-1966`) — **runs ALL hooks, no break on handled**. Emit site: `UseItemPacketListener.spellOnObject` (`UseItemPacketListener.ts:220-241`) — look up object, walkToObject, on arrival re-check `stillStands`, reset queue, face object, then emit; the emit *is* the action (no fallback cast).
+- Go: no MagicOnObject listener — opcode 2 (`OPLOC_T`) decoded (`internal/protocol/decode_listeners.go:850-886`) then decode-dropped (`internal/listeners/listeners.go:967-986`). No onSpellCast emit site — `routeWidgetAction` (`internal/listeners/listeners.go:1517-1680`) has no spell branch ("bank/prayer/spell branches are GAPs", `listeners.go:1505-1510`).
+- Phase 43 pattern to copy (`onSpellOnItem`): event struct + registry + `Api.OnSpellOnItem` + `Hub.EmitSpellOnItem` in `internal/plugins/spells.go`; listener-facing event + `SpellHooks` field in `internal/listeners/spellhooks.go`; adapter in `cmd/server/spellwiring.go`; call site in the listener. Test pattern: `TestOnSpellOnItemEmit` (`internal/plugins/spells_test.go:218+`).
+- Reuse as-is from Phase 27: `canCastSpell` (book-agnostic), `StartCast` presentation, spell registry (`RegisterCombatSpell`/`GetCombatSpell`/`ResolveSpell`), `SpellDisabled`/`SpellRuneBypass` gates, autocast (Ancient slots 31–46 + Arceuus 53–58 already mapped; only registrations missing), spellbook state (`SetSpellbook`/`ChangeSpellbook`), combat method + hit pipeline.
+- **Multi-target (burst/barrage) is NOT a risk:** Go's magic combat method already supports it — `magicCombatMethod.Hits` (`internal/game/combat_magic.go:82`) uses `spell.SpellRadius() > 0` + `Hooks.SpellAreaTargets` + `CanAttackSecondaryTarget` (`internal/game/combat_factory.go:716`). The Ancient worker must verify the production wiring of `SpellAreaTargets` and declare radius 1 on Burst/Barrage.
+- Gap-14 checklist: (a) OPEN; (b) OPEN (emit exists, no applier); (c) OPEN (rebound engine exists, cast open); (d) OPEN; (e) OPEN (function exists, no call site); (f) OPEN (both); (g) OPEN; (h) **COVERED — §14(h) is stale** (StartCast live since Phase 29; correct in PORT_STATUS at landing); (i) OPEN (all five); (j) COVERED; (k) COVERED (documented, not a bug).
+
+### 1.8 Engine pieces each book needs (Go status)
+- Already in Go: spellbook state + `ChangeSpellbook` + Lunar 40-Def gate, `Spell.CanCast` core, combat/utility registries, `magic:hit-effects` / `magic:utility-effect-check` + `magic:utility-effect` emission (`combat_spells.go:1068–1092`), autocast front-end, TeleBlock apply/remove, `FreezeTicks` (`combat_factory.go:1441–1498`), Vengeance rebound (`HandleVengeance`), god-spell drains + `ApplyChargeMaxHit`, cache spell lookup for Lunar.
+- Missing: bind/curse/freeze **application** (nothing consumes `magic:utility-effect`); TeleBlock per-tick plugin (`plugins/combat/TeleBlock.plugin.js`, 36 lines); **teleport system — entirely absent** (blocks 46 teleport spells); spellbook locks (no `quest:is-complete` answers); ElementalStaves rune bypass (Go has only air/fire infinite-rune checks); rune pouch (TS 1,203 lines — separate slice); alchemy confirm dialogue (fail-closed in Go); Vengeance/Vengeance Other casts (route to NOT STARTED); Slayer staff / Magic Dart rules; `onSpellCast`/`onSpellOnObject` (built this phase); Ahrim's autocast exception; ItemAliases; Lunar repeat-task seam; Arceuus-only seams (thralls, Death Charge, corruption, Ward, `herblore:clean`).
+
+## 2. The split
+
+### Phase 45 — THIS phase (four parallel streams)
+1. **Hub families**: `onSpellCast` + `onSpellOnObject` firable, both emit sites, tests. Hub 59 → 61 families. (Worker P1.)
+2. **Standard-book effects**: `magic:utility-effect` consumers — StandardBindings (70 lines), StandardCurses (95), Freezes (85), TeleBlock tick driver (36), ElementalStaves (64). Completes the standard book's binds/curses/freezes; closes gap 14(b) and the ElementalStaves part of 14(g). (Worker P2.)
+3. **Ancient Magicks combat**: 16 spells, tables + registration + effects, autocast lights up. **Exclude the 8 Ancient teleports** (need the teleport system). (Worker P3.)
+4. **Enchant Jewellery**: 7 spells + repeat loop via already-firable `onSpellOnItem`. (Worker P4.)
+
+### Slice 2 — Teleport system + all teleport spells (46) [FOLLOW-UP PHASE]
+Build `TeleportHandler` once (TeleBlock check + Wilderness confirm, `spell:teleport-confirm`/`spell:teleport-arrival`, Lunar/Arceuus teleport types), then land standard 11 + Ancient 8 + Lunar 15 + Arceuus 12 from the three existing TS Map tables.
+
+### Slice 3 — Lunar engine core [FOLLOW-UP PHASE]
+33 entries + Vengeance + Spellbook Swap. Needs Slice 2 (teleports), repeat-task seam, `quest:is-complete` answers for Dream Mentor (fail-closed otherwise), potion-share + NPC-contact events, Monster Examine interface 522 + script 1179, `expireSpellbookSwap` per-tick check. Level/runes from cache. Cures/Farming/Crafting Lunar spells stay with their content owners. Resolve the Vengeance Other XP discrepancy (10000 vs 108) at port time.
+
+### Slice 4 — Arceuus [FOLLOW-UP PHASE, last and biggest]
+42 spells. Needs Slice 2 (teleports), thrall NPC system, offerings tables, corruption/death-charge/ward/mark timers, reanimation NPC spawn, A Kingdom Divided lock. Port the *self-cast* Mark/Lesser/Greater as canonical; do not port both versions. Reanimation kill-reward plugin rides here.
+
+### Spell-driven content placement
+- Bolt Enchanting: after Phase 45 (onSpellCast lands) + `bolt-enchanting.json` import approval.
+- Spin Flax: Slice 3 (Lunar book).
+- Tan Leather: Slice 3 + diary system (separate phase — no diary system exists in Go).
+- Superglass Make: Slice 3 + `forceAdd` seam (separate decision — same gap blocking clue-bottle drops and bird nests).
+- Charge Orbs: Slice 3 (Lunar book + `crafting-spells.json` import approval).
+- Reanimation: Slice 4.
+
+### Not in any slice (separate decisions)
+Rune pouch (1,203 lines TS); alchemy confirm dialogue; Slayer staff plugin; spellbook-switch entry points (Altars/Tyss/magic cape); `onSpellOnNpc` hub family (listener seam exists, hub family missing — cheap follow-up); `ApplyChargeMaxHit` call site; NPC god drains; TeleBlock effect-timer frame (no SendEffectTimer seam); Ahrim's autocast exception; ItemAliases.
+
+### Data files needing Tyler's verbatim-import approval (DO NOT import this phase)
+| File | Size | SHA-256 |
+|---|---|---|
+| `server/plugins/skills/data/bolt-enchanting.json` | 2,619 bytes | `e58c5cfe2c7c606ca597db350e57fbf5a83813a9818ba3cacc12bc2934b17af9` |
+| `server/plugins/skills/data/crafting-spells.json` | 5,382 bytes | `8b8ba280661571bf09945ae561df607aa3b2a5fc9cb6bddd65256d9e49898e70` |
+| `server/plugins/skills/data/bone-altars.json` (only `zealot` section needed by Reanimation; rest belongs to unported BoneAltars) | 1,202 bytes | `dc618d1413cf6718019ed0fc430e2fa2f4aa409ebd021e8b691917d217a42f4f` |
+
+## 3. Port pattern (established)
+- Package `init()` → `plugins.Register(Plugin)`, one blank import first-alphabetical in `cmd/server/pluginwiring.go`, `hub.Load()` runs Register. Hub-contract lesson: surfaces installed after plugin Load must be resolved lazily, never captured in Register.
+- XP grants through SkillManager (known integer-truncation gap — do NOT silently change XP math; record as residual). No SkillLevelUp emitter exists yet — do not build one unless the slice cannot function without it; record it.
+- No commits by workers (parent handles git). Do NOT touch `/home/hatch/live36` or `~/tsps-full`. No broad process cleanup. No new dependencies. No stray artifacts, probe files, or `.js` files in the repo; delete temporary probe tests after use. Leave the untracked `.github/workflows/android-server.yml` alone (separate Android task).
+
+## 4. Live verification (smoke45, fresh temp root /home/hatch/smoke45/)
+- Real rev-242 cache from `/home/hatch/smoke27/seed-root/caches/osrs-242_2026-11-03` — copy `target.txt` + `data/`, symlink caches; do NOT run from the repo root.
+- Legs: (a) hub proof — a temporary test hook claiming a self-cast and a spell-on-object click, both emits fire over the wire, claimed click consumed; (b) bind/freeze live — Snare/Bind holds a target, Ice Rush freezes; (c) Ancient combat live — at least one Rush and one Barrage (multi-target) with rune consumption + XP; (d) Enchant Jewellery live — Lvl-1 enchant on a gold ring, XP + product; (e) autocast still working (standard book, regression); (f) failure case — wrong runes / wrong book refused. Legs may run singly (RUNS override). Harness traps: gorilla readErr is sticky (deadline-free reader goroutine); smoke client must send ClientHandshake after LOGIN; driver must write per-mode npc-spawns.json into the temp root; NPC spawning is eager at 150/tick so allow ~2 min after boot.
+- Sub-units unit-covered only must be stated as such, not claimed live.
+
+## 5. Results
+- (to be filled)

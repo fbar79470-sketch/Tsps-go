@@ -52,14 +52,15 @@ func restoreEntryAutocast(p *game.Player, carried *persist.PlayerSave) {
 // InstallSpellListeners wires the magic listeners' spell seams
 // (listeners.SpellHooks, see internal/listeners/spellhooks.go)
 // for a player entering the world: the cache spell-name
-// lookup, the spellbook read, the combat spell cast, the
-// spell-on-item hook emit, the rune/disabled gates, and the
+// lookup, the spell-widget-group check, the spellbook read, the combat spell cast, the
+// spell-on-item, spell-on-object, and spell-cast hook emits, the rune/disabled gates, and the
 // tick-task scheduling for delayed spell effects. Called once per entering player in
 // AddPlayer, next to InstallCombatListeners. Every seam is
 // nil-safe: a nil definitions facade skips the cache-name
-// fallback (ids resolve by id only), a nil world leaves the
+// fallback (ids resolve by id only) and the group check (no
+// widget group counts as a spell group), a nil world leaves the
 // task seam unset (delayed spell effects cannot run), a nil
-// hub leaves the spell-on-item emit unset (no hooks are
+// hub leaves the spell emits unset (no hooks are
 // wired), and the gate adapters read the game.Hooks spell
 // fields at call time (populated by InstallCombatHooks in
 // buildServer) so a hub installed after this call still takes
@@ -95,10 +96,56 @@ func InstallSpellListeners(deps *listeners.Deps, hub *plugins.Hub, defs *cache.C
 			ev.Handled = hubEvent.Handled
 			return handled
 		}
+		deps.SpellHooks.EmitSpellOnObject = func(ev *listeners.SpellOnObjectEvent) bool {
+			if ev == nil {
+				return false
+			}
+			// ObjectEntry and plugins.GameObject carry the
+			// same pinned accessors (ID/Location/Type/Face),
+			// so the listener object satisfies the hub event
+			// directly; a nil entry reads as a nil GameObject.
+			var obj plugins.GameObject
+			if ev.Object != nil {
+				obj = ev.Object
+			}
+			hubEvent := &plugins.SpellOnObjectEvent{
+				Player:      ev.Player,
+				Object:      obj,
+				ObjectID:    ev.ObjectID,
+				SpellWidget: ev.SpellWidget,
+				SpellChild:  ev.SpellChild,
+				SpellItemID: ev.SpellItemID,
+				SpellID:     ev.SpellID,
+				Location:    ev.Location,
+				Handled:     ev.Handled,
+			}
+			handled := hub.EmitSpellOnObject(hubEvent)
+			ev.Handled = hubEvent.Handled
+			return handled
+		}
+		deps.SpellHooks.EmitSpellCast = func(ev *listeners.SpellCastEvent) bool {
+			if ev == nil {
+				return false
+			}
+			hubEvent := &plugins.SpellCastEvent{
+				Player:      ev.Player,
+				SpellName:   ev.SpellName,
+				SpellWidget: ev.SpellWidget,
+				SpellItemID: ev.SpellItemID,
+				OpID:        ev.OpID,
+				Handled:     ev.Handled,
+			}
+			handled := hub.EmitSpellCast(hubEvent)
+			ev.Handled = hubEvent.Handled
+			return handled
+		}
 	}
 	if defs != nil {
 		deps.SpellHooks.SpellName = func(widgetID, itemID int) (string, bool) {
 			return defs.GetSpellName(widgetID, itemID)
+		}
+		deps.SpellHooks.IsSpellWidgetGroup = func(groupID int) bool {
+			return defs.IsSpellWidgetGroup(groupID)
 		}
 	}
 	deps.SpellHooks.SpellbookInterfaceID = func(p *game.Player) int {

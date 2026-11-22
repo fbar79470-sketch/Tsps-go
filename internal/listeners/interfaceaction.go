@@ -43,15 +43,15 @@
 // and main-inventory branches in TS order; only the final else
 // reaches the opcode handle. A handled fallthrough SKIPS the
 // dialogue-option tail (TS `continue`, NetworkBuilder.ts:1132),
-// while an unhandled one runs it. The shop branch is
+// while an unhandled one runs it — after the simple-click
+// button-click fallback (emitButtonClick, NetworkBuilder.ts:
+// 1133-1137), which fires the onButtonClick / onButton hooks
+// (phase 46) for simple IF_BUTTON clicks only; a claimed
+// button click also skips the tail. The shop branch is
 // untouched: group 300/301 clicks still route to the shop
 // handler first (ShopManager.handleWidgetAction sits before
 // the fallthrough in the TS chain, NetworkBuilder.ts:1025),
-// and only unhandled shop clicks fall through. The simple-click
-// button-click fallback (emitButtonClick, NetworkBuilder.ts:
-// 1133-1137) is a GAP: onButton/onButtonClick stay table-only
-// (no button hooks exist to claim the click), so the fallback
-// is a documented no-op.
+// and only unhandled shop clicks fall through.
 //
 // The widget_target case closes interruptible interfaces when
 // the target is the inventory group (NetworkBuilder.ts:1181),
@@ -213,6 +213,19 @@ type InterfaceCloseEvent struct {
 	Handled bool
 }
 
+// ButtonClickEvent is the listener-facing form of the
+// simple-click button event (PluginTypes.ts): the player, the
+// clicked button id, and the handled flag. It mirrors the hub
+// event field for field (see plugins.ButtonClickEvent); the
+// coordinator's adapter translates between them. A simple
+// IF_BUTTON (opcode 13) click unclaimed by the
+// interface-action hub fires it (NetworkBuilder.ts:1133-1137).
+type ButtonClickEvent struct {
+	Player   *game.Player
+	ButtonID int
+	Handled  bool
+}
+
 // InterfaceHooks carries the interface-action hub emits and
 // the busy-refusal set as func fields, following the NpcHooks
 // / ObjectHooks precedent. Every field is optional: nil means
@@ -249,6 +262,12 @@ type InterfaceHooks struct {
 	// handled (return value or the Handled flag). A nil
 	// seam means unhandled.
 	EmitInterfaceClose func(*InterfaceCloseEvent) bool
+	// EmitButtonClick fires the onButtonClick / onButton
+	// hooks (after the interface-action dispatch, for simple
+	// IF_BUTTON clicks only) and reports whether a hook
+	// claimed the click (return value or the Handled flag).
+	// A nil seam means unhandled.
+	EmitButtonClick func(*ButtonClickEvent) bool
 }
 
 // isLocked mirrors Player.isLocked (Player.ts:827-829): held
@@ -325,6 +344,22 @@ func emitWidgetAction(p *game.Player, packet any, deps Deps) bool {
 	}
 	ev := &WidgetActionEvent{Player: p, Packet: packet}
 	if deps.InterfaceHooks.EmitWidgetAction(ev) || ev.Handled {
+		return true
+	}
+	return false
+}
+
+// emitButtonClick fires the onButtonClick / onButton hooks for
+// one simple IF_BUTTON click (NetworkBuilder.ts:1133-1137)
+// and reports whether a hook claimed the click. A nil seam
+// means unhandled. It runs only for simple clicks: the caller
+// (the widget-action fallthrough) checks msg.Simple.
+func emitButtonClick(p *game.Player, buttonID int, deps Deps) bool {
+	if deps.InterfaceHooks.EmitButtonClick == nil {
+		return false
+	}
+	ev := &ButtonClickEvent{Player: p, ButtonID: buttonID}
+	if deps.InterfaceHooks.EmitButtonClick(ev) || ev.Handled {
 		return true
 	}
 	return false
@@ -686,18 +721,17 @@ func closeOnInterfaceCloseID(p *game.Player) (int, bool) {
 // hadSomethingOpen computation (NetworkBuilder.ts:1242-1247):
 // a non-NONE status, an open main interface, an active
 // dialogue, a mounted interruptible interface, or an armed
-// input prompt. Status reads derive from the state machines
-// (Trading().Status() for TRADING; the duel state for
-// DUELING — the same reads Worker 1's close gate uses);
-// SHOPPING/BANKING/PRICE_CHECKING have no player-readable Go
-// state and degenerate to NONE (their screens set the
-// interface id, which the interface-id disjunct covers). The
+// input prompt. Status reads the Player status field
+// (BANKING via the field, TRADING via the trade derivation,
+// status.go); SHOPPING/DUELING/PRICE_CHECKING still have no
+// producer (their screens set the interface id, which the
+// interface-id disjunct covers). The
 // interruptible-interface term reads the InterfaceSends seam
 // (nil reads false: no session state is visible). A
 // zero-value player has no dialogue manager; the dialogue
 // term guards it.
 func interfaceCloseHadSomethingOpen(p *game.Player, deps Deps) bool {
-	if p.Trading().Status() != game.PlayerStatusNone {
+	if p.Status() != game.PlayerStatusNone {
 		return true
 	}
 	if dueling := p.Dueling(); dueling != nil && dueling.State() != game.DuelStateNone {

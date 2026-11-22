@@ -81,6 +81,15 @@ type Hub struct {
 	// it exists before any registration runs.
 	hooks *hookRegistry
 
+	// buttonClicks is the simple-click button registry
+	// (buttons.go), created in NewHub. It lives beside the
+	// hook registry rather than inside it because hooks.go
+	// owns the hookRegistry struct: the button lists need
+	// their own mutex-guarded home, and the seal that gates
+	// registration still lives in the hook registry (see
+	// Api.canRegister).
+	buttonClicks *buttonClickRegistry
+
 	initialized  bool
 	loadedNames  []string
 	declarations map[string]DeclaredConfig
@@ -114,6 +123,7 @@ func NewHub(list []Plugin, opts HubOptions) *Hub {
 		membersWorld:      opts.MembersWorld,
 		disablePlayerBots: opts.DisablePlayerBots,
 		hooks:             newHookRegistry(),
+		buttonClicks:      newButtonClickRegistry(),
 		declarations:      make(map[string]DeclaredConfig),
 	}
 }

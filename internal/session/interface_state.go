@@ -65,21 +65,25 @@ type SubInterfaceMount struct {
 //     half of abortInputPrompt).
 //   - CloseShop closes the player's active shop
 //     (ShopManager.close, called from resetInterfaceState).
-//   - SetStatusNone resets the player status to NONE. No Go
-//     PlayerStatus field exists, so the wiring leaves this
-//     nil; the slot exists so a future status port can fill
-//     it without changing this API.
+//   - SetStatusNone resets the player status to NONE. Fillable
+//     since phase 46: the Player status field exists
+//     (status.go), so the coordinator wires p.SetStatusNone
+//     (or game.BankClearStatus) here; until the wiring lands
+//     the slot stays nil and the reset leaves the status
+//     alone.
 //   - SetDestroyPending sets the "destroy-item:pending"
 //     attribute to -1 (resetInterfaceState).
 //   - SetCanChangeAppearance clears the appearance-change
 //     flag (resetInterfaceState).
 //   - EndBankSearch ends the client's bank search when the
 //     bank (interface 12) closes (PacketSender.endBankSearch,
-//     PacketSender.ts:902-907). GAP: Go's Bank holds no search
-//     state (only the search-tab container; no searching flag
-//     or closeSearch), so the wiring leaves this nil and the
-//     close sends no meslayer-close script. Wiring it needs a
-//     bank-search port, not a seam fill.
+//     PacketSender.ts:902-907). Fillable since phase 46: the
+//     bank search state exists (game.BankEndSearch, which
+//     clears the flag/syntax and empties the search tab), so
+//     the coordinator wires func(id int) {
+//     game.BankEndSearch(p, id) } here; until the wiring lands
+//     the slot stays nil and the close sends no meslayer-close
+//     script.
 //   - GameframeRoot reports the gameframe root id for tab
 //     setup frames (resolveGameframeRoot). Nil means the 161
 //     default (the stock resizable root); the bootstrap's

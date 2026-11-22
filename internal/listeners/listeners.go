@@ -115,9 +115,9 @@ const (
 	// plugin object interaction (or opens the bank). The
 	// main-world path is implemented (phase 13); this reason now
 	// means only that the object seams are unwired
-	// (Deps.Objects or Deps.ObjectDefs is nil). The bank branch,
-	// boat-deck branches, and facing stay gaps (see
-	// objectaction.go).
+	// (Deps.Objects or Deps.ObjectDefs is nil). The boat-deck
+	// branches and facing stay gaps (see objectaction.go); the
+	// bank branch is claimed by the Bank content (phase 46).
 	ReasonObjectAction DropReason = "requires the object lookup and definition source — unwired (Deps.Objects or Deps.ObjectDefs is nil)"
 	// PlayerOptionPacketListener.executeClientOption
 	// (PlayerOptionPacketListener.ts:17-40) attacks (option 1),
@@ -416,6 +416,13 @@ type Deps struct {
 	// them with ReasonWidgetAction.
 	Shop ShopWidgetHandler
 
+	// Bank carries the bank deposit/move flows (bank.go): the
+	// 243/244 deposit and 245 bank-move dispatch cases. A nil
+	// handler means no bank flows are wired: the packets are
+	// decoded and dropped with ReasonNoAction. The coordinator
+	// wires it in cmd/server to the bank flows (Worker B).
+	Bank BankActions
+
 	// Dialogue is the dialogue-runtime seam for the
 	// dialogue_continue packet and the widget_action
 	// dialogue-option tail (see npc.go). The coordinator
@@ -555,7 +562,9 @@ type Outcome struct {
 // gates, forceChat, and the broadcast through the Deps.Chat seams),
 // social-packet routing (decode, the player guard, and the
 // Deps.SocialEmit emit for the five social opcodes and the CHAT
-// clan/friends-chat kinds, with no further action),
+// clan/friends-chat kinds, with no further action), bank deposit/move
+// (decode, the bank-open gate, and the Deps.Bank seam for the 243/244
+// deposit and 245 move cases),
 // interface-action dispatch (the opcode handle's gates + the hub
 // emit, via the Deps.InterfaceHooks seams, from the widget-action
 // fallthrough, the widget-target fallback, local triggers, and
@@ -583,9 +592,10 @@ type Outcome struct {
 //
 // The coordinator wires Handle into handleTurnPacket AFTER the
 // WALK/MOVE_GAMECLICK cases; those opcodes are not recognized here.
-// Opcodes TS decodes to messages no listener file owns (bank_move
-// and the no-branch "raw" opcodes 50, 195,
-// 255) return Recognized=false. The world-entity opcodes
+// Opcodes TS decodes to messages no listener file owns (the
+// no-branch "raw" opcodes 50, 195, 255) return Recognized=false.
+// The bank opcodes (243-245) ARE recognized: dispatch routes them
+// to the bank seam (see the cases). The world-entity opcodes
 // (220-225) ARE recognized: dispatch answers them directly
 // with the dispatch-case gates + the hub emit (see the cases).
 // The social opcodes
@@ -1068,6 +1078,26 @@ func Handle(p *game.Player, pkt game.TurnPacket, cycle int64, deps Deps) Outcome
 			return acted()
 		}
 		return noAction()
+
+	// Bank deposit/move (NetworkBuilder.ts:860-878): deposit
+	// inventory (243), deposit equipment (244), bank move
+	// (245). All three require the bank open; see bank.go.
+	case protocol.ClientBankDepositInventory:
+		if err := protocol.DecodeBankDepositInventory(pkt.Payload); err != nil {
+			return malformed(err)
+		}
+		return routeBankDeposit(p, false, deps, drop, acted, noAction)
+	case protocol.ClientBankDepositEquipment:
+		if err := protocol.DecodeBankDepositEquipment(pkt.Payload); err != nil {
+			return malformed(err)
+		}
+		return routeBankDeposit(p, true, deps, drop, acted, noAction)
+	case protocol.ClientBankMove:
+		msg, err := protocol.DecodeBankMove(pkt.Payload)
+		if err != nil {
+			return malformed(err)
+		}
+		return routeBankMove(p, msg, deps, drop, acted, noAction)
 	case protocol.NativeIfButtond, protocol.ClientIfButtond:
 		msg, err := protocol.DecodeWidgetDrag(pkt.Payload)
 		if err != nil {
@@ -1080,11 +1110,13 @@ func Handle(p *game.Player, pkt game.TurnPacket, cycle int64, deps Deps) Outcome
 		// (NetworkBuilder.ts lines 1219-1222): a handled
 		// event skips the whole case, including the move.
 		// Bank.handleDrag (Bank.ts:607-617) returns false
-		// unless bank widgets are open; no bank-open state
-		// exists in Go, so it always falls through to move,
-		// as TS falls through when the bank is closed. move
-		// receives the SOURCE widget id, source slot, and
-		// target slot (NetworkBuilder.ts lines 1223-1225).
+		// unless bank widgets are open; it is not ported
+		// (Worker B), so the drag always falls through to
+		// move — as TS falls through when the bank is closed,
+		// and as it falls through for a drag whose target is
+		// not a bank drag target. move receives the SOURCE
+		// widget id, source slot, and target slot
+		// (NetworkBuilder.ts lines 1223-1225).
 		if emitWidgetAction(p, msg, deps) {
 			return noAction()
 		}
@@ -1511,9 +1543,10 @@ const mainInventoryGroupID = 149
 // unwired. The fallthrough calls the opcode handle
 // (InterfaceActionClickOpcode.handle): a handled click skips
 // the dialogue tail (TS `continue`, line 1132); an unhandled
-// click runs the tail, and the simple-click button-click
-// fallback (lines 1133-1137) is a GAP — onButton/onButtonClick
-// stay table-only, so it can never claim a click.
+// click runs the tail, after the simple-click button-click
+// fallback (lines 1133-1137, phase 46: onButtonClick /
+// onButton hooks for simple IF_BUTTON clicks; a claimed
+// button click also skips the tail).
 func routeWidgetAction(p *game.Player, msg protocol.WidgetAction, deps Deps, drop func(DropReason) Outcome, acted, noAction func() Outcome) Outcome {
 	// The player:widget-action custom event (lines 977-979):
 	// handled skips the whole case, tail included.
@@ -1538,8 +1571,14 @@ func routeWidgetAction(p *game.Player, msg protocol.WidgetAction, deps Deps, dro
 	// Equipment-slot resolution (lines 984-987): group 12 is
 	// Bank.MAIN_INTERFACE_ID (Bank.ts:70), and the worn-equipment
 	// panel resolves only while the bank is open with button 1.
-	// No bank-open state exists, so Bank.isOpen always reads
-	// false and group 12 always resolves to -1.
+	// Group 12 is deliberately left unresolved here even though
+	// BankIsOpen exists now (phase 46): bank widget clicks
+	// route through the interface-action hub to the bank
+	// content's (group, child) routing (PHASE46_PLAN.md §4),
+	// and the child-to-equipment-slot map for the worn panel
+	// is not grounded in the plan. The TS op-1-unequip leg
+	// while the bank is open stays a gap for the bank widget
+	// work (Worker B).
 	equipmentSlot := -1
 	if msg.GroupID != 12 {
 		equipmentSlot = resolveEquipmentSlot(msg.GroupID, msg.ChildID)
@@ -1586,7 +1625,8 @@ func routeWidgetAction(p *game.Player, msg protocol.WidgetAction, deps Deps, dro
 	// answers only while a shop is open for the player; a
 	// handled click claims the packet, an unhandled one falls
 	// through to the inventory branch. The bank branch before
-	// it stays a GAP (no bank interface flows), and the
+	// it is handled through the onButtonClick emit (phase 46:
+	// the Bank content claims its buttons), and the
 	// prayer/spell branches after the combat branches stay
 	// GAPs.
 	if HandleShopWidgetAction(p, msg, deps.Shop) {
@@ -1655,13 +1695,14 @@ func routeWidgetAction(p *game.Player, msg protocol.WidgetAction, deps Deps, dro
 	// as the action. A handled click SKIPS the dialogue tail
 	// (TS `continue`, line 1132: a prompt callback may start
 	// a new dialogue, which must not take this same click as
-	// its option); an unhandled click runs the tail, and the
-	// simple-click button-click fallback is a GAP (see the
-	// function header). Absent fields stay absent: the
-	// decoder's -1 slot/item mean "no value", a zero subOpId
-	// means "no submenu entry", and op id / option carry
-	// their own presence flags. IF_BUTTON_SUB passes its
-	// slot through raw (65535 stays 65535), as TS does.
+	// its option); an unhandled click runs the tail, after the
+	// simple-click button-click fallback (lines 1133-1137:
+	// a claimed button click also skips the tail). Absent
+	// fields stay absent: the decoder's -1 slot/item mean "no
+	// value", a zero subOpId means "no submenu entry", and op
+	// id / option carry their own presence flags.
+	// IF_BUTTON_SUB passes its slot through raw (65535 stays
+	// 65535), as TS does.
 	ev := &InterfaceActionClickEvent{
 		Player:     p,
 		ButtonID:   int(msg.WidgetID),
@@ -1687,6 +1728,16 @@ func routeWidgetAction(p *game.Player, msg protocol.WidgetAction, deps Deps, dro
 		ev.SubOpID, ev.HasSubOpID = msg.SubOpID, true
 	}
 	if handleInterfaceActionClick(ev, deps) {
+		return acted()
+	}
+	// Simple-click button-click fallback (lines 1133-1137):
+	// a simple IF_BUTTON click unclaimed by the
+	// interface-action hub fires the onButtonClick /
+	// onButton hooks; a claimed click skips the dialogue
+	// tail, like a handled interface-action click.
+	// Non-simple clicks (IF_BUTTON_SUB/X/1-10, widget_action)
+	// never reach it.
+	if msg.Simple && emitButtonClick(p, int(msg.WidgetID), deps) {
 		return acted()
 	}
 	return finish(noAction())
@@ -1768,7 +1819,7 @@ func Statuses() []Status {
 		{
 			Listener: "InterfaceActionClickOpcode",
 			Opcodes:  "251 (WIDGET_ACTION) + native 13, 89, 91, 23, 25, 31, 63, 69, 11, 14, 19, 20, 84 (IF_BUTTON family) + 90 (IF_BUTTONT, fallback) + 30 (IF_TRIGGEROPLOCAL) + the dialogue_continue pre-branch (62/252); helper, not a registered listener — called from the widget_action/widget_target/local_trigger/dialogue_continue dispatch cases",
-			Action:   "implemented: dead/busy/teleport gates (teleport degenerates to pass: no teleport system), BUSY_MESSAGE refusal via the hub refuseWhileBusy set, prompt-first hub emit (onInterfaceActionClick/onInterfaceActionButton, one list in registration order, handled short-circuit) from the widget-action fallthrough (a handled click skips the dialogue tail), the widget-target fallback (inventory-group close first), local triggers (op 1-10 + script triggers with argsData), and the ungated dialogue_continue pre-branch; the player:widget-action emit (widget_action + widget_drag) and the WORLD_INTERACTIONS preamble (TRADING skip, player:world-input emit, closeInterruptibleInterfaces with the preservesInterfaceOnEquip exception) run in dispatch order; gaps: simple-click emitButtonClick fallback (onButton/onButtonClick table-only), bank/prayer/combat/spell widget branches, Lunar/other-EffectSpells spell-on-item routes, animation-stall hold, creation-menu pre-branch",
+			Action:   "implemented: dead/busy/teleport gates (teleport degenerates to pass: no teleport system), BUSY_MESSAGE refusal via the hub refuseWhileBusy set, prompt-first hub emit (onInterfaceActionClick/onInterfaceActionButton, one list in registration order, handled short-circuit) from the widget-action fallthrough (a handled click skips the dialogue tail), the simple-click button-click fallback (onButtonClick/onButton hooks, phase 46; a claimed button click also skips the tail), the widget-target fallback (inventory-group close first), local triggers (op 1-10 + script triggers with argsData), and the ungated dialogue_continue pre-branch; the player:widget-action emit (widget_action + widget_drag) and the WORLD_INTERACTIONS preamble (TRADING skip, player:world-input emit, closeInterruptibleInterfaces with the preservesInterfaceOnEquip exception) run in dispatch order; gaps: bank/prayer/combat/spell widget branches, Lunar/other-EffectSpells spell-on-item routes, animation-stall hold, creation-menu pre-branch",
 		},
 		{
 			Listener: "ItemActionPacketListener",
@@ -1788,12 +1839,12 @@ func Statuses() []Status {
 		{
 			Listener: "NPCOptionPacketListener",
 			Opcodes:  "76, 12, 34, 70, 57 (npc_option clickType 1-5; 57 is OPNPC1 in the native enum but decodes as option 5, 76 as option 1; 50/OPNPC5 has no decode branch) + 75 (OPNPC_T, spell_on_npc)",
-			Action:   "implemented: hitpoints gate (busy() degenerates to it), index lookup, 24-tile same-plane visibility, combat option (attackable/hitpoints gates, attack-option gate, autocast-conditional clear + attack via the combat seam), walk-to-NPC + route hooks, arrival re-check, dialogue-start seam + interaction/operated emits, \"Nothing interesting happens.\" fallback, click-run override; spell-on-NPC (phase 27): spell-id resolution, area canCastOnNpc permission, combat route through Combat.castSpellOn iff attackable, scripted route (walk-to approach + onSpellOnNpc emit with consumeRunes) with \"You can't attack this npc.\" fallback; gaps: LunarSpells routing (documented drop), CrossFloor visibility, projectile line of sight on the scripted route, walkToEntity footprint reach/pursuit, facing, boats/private areas/owners, NPC interaction hook families unfired, bank branch",
+			Action:   "implemented: hitpoints gate (busy() degenerates to it), index lookup, 24-tile same-plane visibility, combat option (attackable/hitpoints gates, attack-option gate, autocast-conditional clear + attack via the combat seam), walk-to-NPC + route hooks, arrival re-check, dialogue-start seam + interaction/operated emits, \"Nothing interesting happens.\" fallback, click-run override; spell-on-NPC (phase 27): spell-id resolution, area canCastOnNpc permission, combat route through Combat.castSpellOn iff attackable, scripted route (walk-to approach + onSpellOnNpc emit with consumeRunes) with \"You can't attack this npc.\" fallback; gaps: LunarSpells routing (documented drop), CrossFloor visibility, projectile line of sight on the scripted route, facing, boats/private areas/owners, onBeforeNpcInteraction table-only",
 		},
 		{
 			Listener: "ObjectActionPacketListener",
 			Opcodes:  "96, 28, 42, 38, 51 (object_option clickType 1-5) + 231 (LOC_INTERACT)",
-			Action:   "implemented: hitpoints gate (busy() degenerates to it), player-plane location, registry lookup, forPlayer definition, clickType/action-text normalization, walk-to-object + route hooks, still-stands re-check, interaction emit + operated emit, silent no-handler fallback, click-run override; gaps: boat-deck branches, bank branch, facing, DEVELOPER notice, mounted-decoration reach",
+			Action:   "implemented: hitpoints gate (busy() degenerates to it), player-plane location, registry lookup, forPlayer definition, clickType/action-text normalization, walk-to-object + route hooks, still-stands re-check, interaction emit + operated emit, silent no-handler fallback, click-run override; gaps: boat-deck branches, facing, DEVELOPER notice, mounted-decoration reach",
 		},
 		{
 			Listener: "PickupItemPacketListener",
@@ -1813,7 +1864,7 @@ func Statuses() []Status {
 		{
 			Listener: "SwitchItemSlotPacketListener",
 			Opcodes:  "242 (INVENTORY_MOVE) + 1, 253 (IF_BUTTOND widget_drag, shared with Bank.handleDrag)",
-			Action:   "implemented: bank rearrange (tab from interface id, insert mode false) and inventory swap + refresh for interfaces 3214/5064/1688; gaps: bank-search tab state, insert-mode attribute, tab reconfiguration",
+			Action:   "implemented: bank rearrange (tab from interface id, search tab 10 when searching, live insert-mode attribute) and inventory swap + refresh for interfaces 3214/5064/1688; gaps: tab reconfiguration",
 		},
 		{
 			Listener: "TradeRequestPacketListener",

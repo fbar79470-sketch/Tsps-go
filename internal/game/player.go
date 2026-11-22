@@ -438,10 +438,32 @@ type Player struct {
 	enteredAmountAction *EnteredAmountAction
 	enteredSyntaxAction *EnteredSyntaxAction
 
-	// interfaceMu guards interfaceId and the entered-action
-	// holders; see above. It is never held across a custom-event
-	// emit or an action callback: both can call back into this
-	// player.
+	// status is the player's modal-activity status field
+	// (Player.ts:155, getStatus/setStatus at 1415-1422). TS
+	// keeps one field that Trading, Bank, ShopManager, and the
+	// Duel Arena content all write; Go derives TRADING from the
+	// trade state instead (see trading.go), and this field
+	// carries the statuses no state machine derives — BANKING
+	// today (set by the bank open, cleared by the interface
+	// reset), SHOPPING/DUELING/PRICE_CHECKING when those
+	// systems land. Status() reads the field first and falls
+	// through to the trade derivation when it is NONE. That
+	// precedence differs from TS last-writer-wins in one edge:
+	// a trade opened while the field still holds BANKING reads
+	// BANKING from Status() until the field clears (Trading
+	// never writes the field). No trade decision depends on
+	// it — the trade gates read Trading().Status() directly —
+	// and the bank open/close paths that own the field keep
+	// it in step with the interface. Guarded by interfaceMu:
+	// status changes with interface open/close, on the same
+	// goroutines as the interface id. The zero value is
+	// PlayerStatusNone, the TS field default.
+	status PlayerStatus
+
+	// interfaceMu guards interfaceId, the entered-action
+	// holders, and the status field; see above. It is never
+	// held across a custom-event emit or an action callback:
+	// both can call back into this player.
 	interfaceMu sync.Mutex
 
 	// EmitCustomEvent is the custom-event emit sink, installed

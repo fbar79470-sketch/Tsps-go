@@ -10,7 +10,7 @@ import (
 // NPC-action tests: gates, lookup, distance, the combat
 // gate/attack (attackable/hitpoints gates, the attack-option
 // gate, the combat seam), walk-to-NPC, arrival dispatch
-// (dialogue seam, interaction emit, operated emit, bank gap,
+// (dialogue seam, interaction emit, operated emit, bank fallback,
 // fallback message), the dialogue_continue resume path, and
 // the widget_action dialogue-option tail
 // (NPCOptionPacketListener.ts, NetworkBuilder.ts:908-951,
@@ -94,9 +94,14 @@ func adjacentNpc() *game.NPC {
 	// hitpoints above 0 (DefaultNPCHitpoints 10), so a
 	// fixture NPC that must reach arrival carries 10 — the
 	// arrival closure treats 0 or below as dead/dying
-	// (MovementQueue.ts:1696-1704).
+	// (MovementQueue.ts:1696-1704). It is registered, as
+	// every spawned NPC is: walkToEntity's targetValid
+	// (MovementQueue.ts:1525) refuses an unregistered
+	// target, so an unregistered fixture would never
+	// arrive.
 	npc := game.NewNPC(100, game.Location{X: 3090, Y: 3524, Z: 0})
 	npc.Hitpoints = 10
+	npc.SetRegistered(true)
 	return npc
 }
 
@@ -351,6 +356,7 @@ func TestNpcActionWalkToDistantNpc(t *testing.T) {
 	p := testPlayer()
 	npc := game.NewNPC(100, game.Location{X: 3095, Y: 3524, Z: 0})
 	npc.Hitpoints = 10 // live NPC (see adjacentNpc)
+	npc.SetRegistered(true)
 	started := false
 	hooks := NpcHooks{StartDialogue: func(req *NpcDialogueRequest) bool { started = true; return true }}
 	deps := npcTestDeps(npc, talkToDef(), hooks)
@@ -390,7 +396,7 @@ func TestNpcActionNoHandlerMessage(t *testing.T) {
 	}
 }
 
-func TestNpcActionBankGap(t *testing.T) {
+func TestNpcActionBankFallback(t *testing.T) {
 	p := testPlayer()
 	session := &capturingSession{}
 	p.Session = session
@@ -409,10 +415,10 @@ func TestNpcActionBankGap(t *testing.T) {
 		p.Process(cycle)
 	}
 	if len(session.gameMessages) != 0 {
-		t.Fatalf("messages = %q, want none (bank gap stays silent)", session.gameMessages)
+		t.Fatalf("messages = %q, want none (bank fallback stays silent)", session.gameMessages)
 	}
 	if operated {
-		t.Fatal("the bank gap must not emit operated")
+		t.Fatal("the bank fallback must not emit operated")
 	}
 	if p.MovementQueue().WalkToPending() {
 		t.Fatal("walk-to state must clear after arrival")
@@ -536,11 +542,16 @@ func TestNpcActionArrivalTransformedNpcDrops(t *testing.T) {
 	// An NPC that changes type mid-walk (a sheep sheared by
 	// someone else) is no longer what was clicked: the
 	// interaction drops silently (MovementQueue.ts:1521-1525).
+	// The player starts 4 tiles out so the walk defers the
+	// arrival: an already-adjacent click resolves at once
+	// (MovementQueue.ts:1535-1539), leaving no mid-walk
+	// window for the transform.
 	p := testPlayer()
 	session := &capturingSession{}
 	p.Session = session
-	npc := adjacentNpc()
+	npc := game.NewNPC(100, game.Location{X: 3093, Y: 3524, Z: 0})
 	npc.Hitpoints = 10
+	npc.SetRegistered(true)
 	started := false
 	deps := npcTestDeps(npc, talkToDef(), NpcHooks{
 		StartDialogue: func(req *NpcDialogueRequest) bool { started = true; return true },
@@ -596,6 +607,11 @@ func TestNpcActionClickRunOverride(t *testing.T) {
 		p := game.NewPlayer("testplayer", game.Location{X: 3089, Y: 3524, Z: 0})
 		p.SetRunning(false)
 		npc := game.NewNPC(100, game.Location{X: 3095, Y: 3524, Z: 0})
+		// A live NPC, as the spawn path makes them:
+		// registered with hitpoints, so walkToEntity's
+		// targetValid accepts the walk.
+		npc.Hitpoints = 10
+		npc.SetRegistered(true)
 		deps := npcTestDeps(npc, talkToDef(), NpcHooks{})
 		msg := protocol.NpcOption{Index: 300, ClickType: 1, ModifierFlags: mods}
 		if got := routeNpcOutcome(p, msg, 0, deps); !got.Implemented {

@@ -32,13 +32,15 @@
 // main-world path is ported; setDeckReach/setUsableFromDeck stay
 // table-only in the hub.
 //
-// The bank branch is a GAP: when no plugin handles the
-// interaction and the option is "bank", TS opens the bank
-// (Bank.open sets status BANKING, the interface id, sub-interfaces,
-// varps/varbits, and emits bank:opened). The interface runtime
-// and varp store exist (phase 18), but no Bank.open flow, player
-// status, or bank:opened emit exists in Go, so the bank option
-// stays silent: no open, no operated emit, no message.
+// The bank branch: when no plugin handles the interaction and
+// the option is "bank", TS opens the bank (Bank.open sets status
+// BANKING, the interface id, sub-interfaces, varps/varbits, and
+// emits bank:opened). In Go the Bank content (phase 46) claims
+// the click first, through the onObjectInteraction emit, so this
+// branch only fires when no handler claims it: then it stays
+// silent (no open, no operated emit, no message), a deviation
+// from TS's own open, reachable only with the Bank content
+// unloaded.
 //
 // Facing is a GAP: TS calls setPositionToFace in the arrival
 // closure. The player-facing seam exists since Phase 33
@@ -407,9 +409,13 @@ func objectAction(p *game.Player, msg protocol.ObjectOption, cycle int64, deps D
 			return
 		}
 		if option == "bank" {
-			// Bank branch (lines 97-101): GAP — opening the
-			// bank needs the interface runtime (milestone
-			// 8). No open, no operated emit, no message.
+			// Bank branch (lines 97-101): the Bank content
+			// (phase 46) normally claims the click through
+			// the interaction emit, so this fallback only
+			// fires with no handler: silent (no open, no
+			// operated emit, no message — a deviation from
+			// TS's own open, reachable only with the Bank
+			// content unloaded).
 			return
 		}
 		// No-handler fallback: SILENCE. TS does nothing

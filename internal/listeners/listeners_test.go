@@ -94,6 +94,14 @@ func TestHandleRecognizedOpcodes(t *testing.T) {
 		{"widget drag native", protocol.NativeIfButtond, zeros(16), ReasonNoAction},
 		{"widget drag high", protocol.ClientIfButtond, zeros(16), ReasonNoAction},
 
+		// The bank opcodes (phase 46): zero payloads decode
+		// (empty for the deposits, from/to/mode/tab for the
+		// move) and drop with no-action because the bank is
+		// closed for this player.
+		{"bank deposit inventory", protocol.ClientBankDepositInventory, zeros(0), ReasonNoAction},
+		{"bank deposit equipment", protocol.ClientBankDepositEquipment, zeros(0), ReasonNoAction},
+		{"bank move", protocol.ClientBankMove, zeros(8), ReasonNoAction},
+
 		{"ground option 1", protocol.NativeOpObj1, zeros(7), ReasonNoAction},
 		{"ground option 2", protocol.NativeOpObj2, zeros(7), ReasonNoAction},
 		{"ground option 3", protocol.NativeOpObj3, zeros(7), ReasonGroundItemsUnwired},
@@ -143,7 +151,9 @@ func TestHandleRecognizedOpcodes(t *testing.T) {
 // TestHandleExamine), neither is 62 (dialogue continue, answered
 // directly since phase 14 — see TestHandleDialogueContinue), and
 // neither are 220-225/214 (world-entity options and set_heading,
-// answered directly since phase 21 — see the worldentity tests).
+// answered directly since phase 21 — see the worldentity tests),
+// nor are 243/244/245 (bank deposit/move, answered directly since
+// phase 46 — see the bank tests).
 func TestHandleUnrecognizedOpcodes(t *testing.T) {
 	p := testPlayer()
 	opcodes := []byte{
@@ -153,7 +163,6 @@ func TestHandleUnrecognizedOpcodes(t *testing.T) {
 		protocol.ClientDebug,         // 255
 		protocol.ClientWalk,          // 210: coordinator handles first
 		protocol.NativeMoveGameclick, // 16: coordinator handles first
-		protocol.ClientBankMove,      // 245: Bank directly
 		// The social opcodes 181/196/197/198/199 are NOT here:
 		// dispatch answers them directly with the social-packet
 		// emit (see TestHandleSocialPackets).
@@ -194,6 +203,7 @@ func TestHandleMalformedPayloads(t *testing.T) {
 		{protocol.NativeOpPlayerT, 11},
 		{protocol.ClientInventoryUse, 0},
 		{protocol.ClientInventoryMove, 4},
+		{protocol.ClientBankMove, 0},
 		{protocol.NativeIfButtond, 16},
 		{protocol.NativeOpObj1, 7},
 		{protocol.NativeExamineObj, 6},

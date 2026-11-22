@@ -2232,19 +2232,23 @@ func (q *MovementQueue) tickWalkToObject(wt *walkToState) {
 //     (range = 1, routeRange = range) is ported. The range > 1
 //     reach predicate (distance + canProjectileAttack), the
 //     ignoreProjectileClip option, and allowOverlappingTiles have
-//     no callers in Go and need projectile-clip machinery that
-//     does not exist; WalkToEntity takes no range.
+//     no callers in Go; WalkToEntity takes no range. The
+//     projectile-clip machinery the range > 1 predicate needs
+//     exists now (hasProjectileLine/canProjectileRay,
+//     combat_range.go), which is what lets the unreachable-NPC
+//     branch below use it.
 //   - Facing and interaction state: setMobileInteraction and
 //     faceMobileBriefly are gaps (no interaction/facing
 //     machinery); the action still runs.
 //   - The unreachable-NPC branch (canInteractWithUnreachableNpc,
-//     MovementQueue.ts:1923-1928, plus the frozen
-//     isOnEntityRouteEnd dry run at 1542): NPC-only, and it
-//     needs projectile clip. It is always false in Go, so a
-//     frozen player out of reach hears "I can't reach that!"
-//     and an NPC across a counter is never operated from the
-//     route end. Player targets are unaffected: the branch
-//     requires entity.isNpc().
+//     MovementQueue.ts:1923-1928) is ported (phase 46): an NPC
+//     across a counter (or water) interacts from the route end
+//     once the route has run dry, when the player is within
+//     NPC_INTERACT_RADIUS (2) and the projectile ray is clear.
+//     The frozen isOnEntityRouteEnd dry run at 1542 is still
+//     degenerate: a frozen player out of reach hears "I can't
+//     reach that!" instead of trying the branch. Player targets
+//     are unaffected: the branch requires entity.isNpc().
 //   - The projected-NPC branch (walkToProjectedNpc): ported, at
 //     the default range (range = 1, as for walkToEntity). The
 //     canProjectileMove term of reachedProjectedNpc degenerates
@@ -2368,6 +2372,39 @@ func (q *MovementQueue) ReachedEntity(target EntityTarget) bool {
 		DestLength: max(target.Size, 1),
 		LocShape:   -2,
 	})
+}
+
+// canInteractWithUnreachableNpc is
+// MovementQueue.canInteractWithUnreachableNpc
+// (MovementQueue.ts:1923-1928): prefer adjacent reach —
+// counters (or water, for fishing spots) may leave an NPC
+// visible but no adjacent tile reachable, so interact once
+// the nearest-tile route has been walked, on the arrival
+// tick like a normal reach. NPC-only (entity.isNpc()); the
+// route must be dry (points.length === 0, which also
+// satisfies the isWithinEntityInteractionDistance points
+// term, 1917-1921); the player must be within
+// npcInteractRadius (MovementQueue.NPC_INTERACT_RADIUS = 2,
+// npc.go; Chebyshev, Location.Distance) of the NPC; and the
+// projectile ray must be clear
+// (RegionManager.canProjectileAttack, via canProjectileRay —
+// the combat_range.go port, which reads the installed combat
+// clipping source and reports open ground when none is
+// installed).
+func (q *MovementQueue) canInteractWithUnreachableNpc(target EntityTarget) bool {
+	if target.Mobile == nil || target.NPCType == nil {
+		return false
+	}
+	if len(q.points) != 0 {
+		return false
+	}
+	ownerLoc := q.owner.Location()
+	npcLoc := target.Mobile.Location()
+	dist := ownerLoc.Distance(npcLoc)
+	if dist < 0 || dist > npcInteractRadius {
+		return false
+	}
+	return canProjectileRay(ownerLoc.X, ownerLoc.Y, npcLoc.X, npcLoc.Y, ownerLoc.Z)
 }
 
 // applyEntityRoute mirrors calculateEntityRoute at the default
@@ -2521,18 +2558,26 @@ func (q *MovementQueue) WalkToEntity(target EntityTarget, action func()) {
 	}
 	if frozen {
 		// Frozen and out of reach (MovementQueue.ts:1540-1549):
-		// the route-end + unreachable-NPC branch cannot fire
-		// (see the section header), so the player faces the
-		// target and hears the message. faceMobileBriefly
-		// (TS 1547): GAP — no facing machinery.
+		// the route-end + unreachable-NPC branch needs the
+		// isOnEntityRouteEnd dry run, which is still
+		// degenerate (see the section header), so the player
+		// faces the target and hears the message.
+		// faceMobileBriefly (TS 1547): GAP — no facing machinery.
 		q.owner.SendMessage("I can't reach that!")
 		return
 	}
 
 	q.applyEntityRoute(target)
 	// canInteractWithUnreachableNpc (MovementQueue.ts:1553):
-	// always false in Go (see the section header), so the
-	// reset + immediate action branch cannot fire.
+	// an NPC across a counter with no adjacent tile reachable
+	// interacts at once from the route end (the route just
+	// calculated is dry: the player already stands on the
+	// nearest tile).
+	if q.canInteractWithUnreachableNpc(target) {
+		q.Reset(true)
+		action()
+		return
+	}
 
 	q.walkTo = &walkToState{
 		destination: target.Mobile.Location(),
@@ -2545,15 +2590,16 @@ func (q *MovementQueue) WalkToEntity(target EntityTarget, action func()) {
 // (MovementQueue.ts:1564-1588) with the entityPursuit half
 // (1589-1607) folded in. In order: an invalid target resets
 // and stops silently; arrival resets, stops, and runs the
-// action; pending checkpoints or movement return without
+// action; an unreachable NPC across a counter runs the action
+// from the route end (1579, canInteractWithUnreachableNpc);
+// pending checkpoints or movement return without
 // re-evaluating; otherwise the walk re-paths to the target's
 // live tile (the pursuit re-path, which TS runs pre-step when
 // points <= 1 or the route was invalidated — here it runs
 // whenever the queue has run dry, which subsumes both); a
 // re-path that queues nothing fails with the message and
 // stops. The task ticks on the click cycle, as the object
-// task does. The unreachable-NPC branch of the closure
-// (1579) is always false in Go (see WalkToEntity).
+// task does.
 func (q *MovementQueue) tickWalkToEntity(wt *walkToState) {
 	st := wt.entity
 
@@ -2570,6 +2616,18 @@ func (q *MovementQueue) tickWalkToEntity(wt *walkToState) {
 		// Arrival: reset, stop, run the action. The task
 		// stops before the action runs, so a walk-to
 		// started by the action survives.
+		q.Reset(true)
+		action := wt.action
+		q.walkTo = nil
+		action()
+		return
+	}
+
+	// Unreachable NPC (MovementQueue.ts:1579): an NPC across
+	// a counter interacts from the route end once the route
+	// has run dry, on the arrival tick like a normal reach —
+	// checked before the points/moving gate, as in TS.
+	if q.canInteractWithUnreachableNpc(st.target) {
 		q.Reset(true)
 		action := wt.action
 		q.walkTo = nil

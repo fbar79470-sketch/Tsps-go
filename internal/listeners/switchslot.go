@@ -55,10 +55,12 @@ func switchItemSlot(p *game.Player, interfaceID, fromSlot, toSlot int) bool {
 	// Bank path (lines 23-36): interface ids
 	// [Bank.CONTAINER_START, +TOTAL_BANK_TABS) = [50300, 50311).
 	// The tab is the search tab (10) when searching, else the
-	// interface id offset. Searching degenerates to false: no
-	// bank-search state exists in Go.
+	// interface id offset (BankSearching, bankstate.go).
 	if interfaceID >= game.BankContainerStart && interfaceID < game.BankContainerStart+game.TotalBankTabs {
 		tab := interfaceID - game.BankContainerStart
+		if game.BankSearching(p) {
+			tab = game.BankSearchTabIndex
+		}
 		bank := p.Bank(tab)
 		if fromSlot < 0 || fromSlot >= bank.Capacity() ||
 			toSlot < 0 || toSlot >= bank.Capacity() ||

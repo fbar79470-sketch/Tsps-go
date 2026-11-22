@@ -1,6 +1,8 @@
 package main
 
 import (
+	"sort"
+
 	"tsps-go/internal/cache"
 	"tsps-go/internal/definition"
 	"tsps-go/internal/game"
@@ -459,4 +461,109 @@ func bankDisplayItemID(item game.Item, src game.ItemDefinitionSource) int {
 		return placeholder
 	}
 	return item.ID()
+}
+
+// ---- bank open-sequence sender ---------------------------------
+
+// bankSender implements game.BankSender by reaching the player's
+// session through the SessionPort interface (the shopSender
+// precedent): a session-less player sends nothing. Stateless
+// except for the world name carried for the title string; one
+// shared instance serves the bank.
+type bankSender struct {
+	worldName string
+}
+
+// SendBankOpen delivers one bank-open view as the frame sequence
+// of Bank.open (Bank.ts:1366-1414): script 917 [-1,-2]; the
+// mount varps/varbits as separate varp/varbit packets, sent in
+// ascending id order so the sequence is deterministic (the
+// session MountSubInterface has no options form, so the {varps,
+// varbits} the mounts carry in TS are sent before them instead);
+// the two sub-interface mounts (12 type 0 at (161<<16)|16, 15
+// type 3 at (161<<16)|74); the five flags ranges — the item grid
+// V2 range (0-1409, ITEM_SLOT_FLAGS/OPS), the tab-drop-target
+// range (1428-1437, 1<<20), the tab bar (10-19,
+// TAB_BUTTON_FLAGS), the side inventory (0-27, 3278846), the
+// side worn (0-27, SIDE_WORN_FLAGS); varbit 12393=1; the "Bank
+// of <world>" string at (12<<16)|3; the view-container reset
+// when the view asks for it; then sendBankRefresh (the refresh
+// half of Bank.open, Bank.ts:1412). The CONTAINER_OPEN sound
+// and the bank:opened event are the game layer's job (bankOpen),
+// not the sender's.
+func (s bankSender) SendBankOpen(p *game.Player, view game.BankOpenView) {
+	if p == nil || p.Session == nil {
+		return
+	}
+	send := p.Session.SendPacket
+	send(protocol.EncodeWidgetRunScript(917, []protocol.ScriptArg{
+		protocol.ScriptArgInt(-1),
+		protocol.ScriptArgInt(-2),
+	}, nil, nil, nil))
+	for _, id := range sortedKeys(view.Varps) {
+		send(protocol.EncodeVarp(id, view.Varps[id]))
+	}
+	for _, id := range sortedKeys(view.Varbits) {
+		send(protocol.EncodeVarbit(id, view.Varbits[id]))
+	}
+	send(protocol.EncodeWidgetOpenSub((161<<16)|16, game.BankMainInterfaceID, 0, protocol.WidgetOpenSubOptions{}))
+	send(protocol.EncodeWidgetOpenSub((161<<16)|74, game.BankSideInterfaceID, 3, protocol.WidgetOpenSubOptions{}))
+	send(protocol.EncodeWidgetSetFlagsRangeV2((game.BankMainInterfaceID<<16)|game.BankItemsChild, 0, 1409, game.BankItemSlotFlags, game.BankItemSlotOps))
+	send(protocol.EncodeWidgetSetFlagsRange((game.BankMainInterfaceID<<16)|game.BankItemsChild, game.BankTabDropSlotOffset, game.BankTabDropSlotOffset+9, 1<<20))
+	send(protocol.EncodeWidgetSetFlagsRange((game.BankMainInterfaceID<<16)|game.BankTabsChild, game.BankTabButtonSlotOffset, game.BankTabButtonSlotOffset+9, game.BankTabButtonFlags))
+	send(protocol.EncodeWidgetSetFlagsRange((game.BankSideInterfaceID<<16)|3, 0, 27, 3278846))
+	send(protocol.EncodeWidgetSetFlagsRange((game.BankSideInterfaceID<<16)|game.BankSideWornChild, 0, 27, game.BankSideWornFlags))
+	send(protocol.EncodeVarbit(12393, 1))
+	send(protocol.EncodeWidgetSetText((game.BankMainInterfaceID<<16)|3, "Bank of "+s.worldName, nil))
+	if view.ResetViewContainer {
+		send(protocol.EncodeVarbit(game.BankViewContainerVarbit, 0))
+		send(protocol.EncodeVarp(game.BankViewContainerObjVarp, -1))
+	}
+	sendBankRefresh(p, p.ItemDefinitions())
+}
+
+// SendAmountPrompt sends the "Enter amount:" prompt frame
+// (sendEnterAmountPrompt, PacketSender.ts:446-452:
+// EncodeRunClientScript(108, [title])). The game layer arms
+// the EnteredAmountAction first; this sends only the frame.
+func (bankSender) SendAmountPrompt(p *game.Player, prompt string) {
+	if p == nil || p.Session == nil {
+		return
+	}
+	p.Session.SendPacket(protocol.EncodeRunClientScript(108, []protocol.ScriptArg{protocol.ScriptArgString(prompt)}))
+}
+
+// SendInputPrompt sends the free-text prompt frame
+// (sendEnterInputPrompt, PacketSender.ts:446-452:
+// EncodeRunClientScript(110, [title, 0])). The game layer arms
+// the EnteredSyntaxAction first; this sends only the frame.
+func (bankSender) SendInputPrompt(p *game.Player, prompt string) {
+	if p == nil || p.Session == nil {
+		return
+	}
+	p.Session.SendPacket(protocol.EncodeRunClientScript(110, []protocol.ScriptArg{
+		protocol.ScriptArgString(prompt),
+		protocol.ScriptArgInt(0),
+	}))
+}
+
+// installBankSender installs the bank open-sequence sender
+// (game.SetBankSender). The coordinator calls it from
+// buildServer after loadGameDefinitions (the
+// installShopHubSurfaces precedent, server.go:301), alongside
+// installBankFlows in bankwiring.go. The world name is the
+// configured world definition name (Server.WorldName).
+func installBankSender(worldName string) {
+	game.SetBankSender(bankSender{worldName: worldName})
+}
+
+// sortedKeys returns the map's keys in ascending order, so a
+// varp/varbit bundle is sent deterministically.
+func sortedKeys(m map[int]int) []int {
+	keys := make([]int, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Ints(keys)
+	return keys
 }

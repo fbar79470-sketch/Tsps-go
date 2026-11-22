@@ -26,9 +26,11 @@ import (
 // keeps both, and resetAttributes clears both together — and
 // NONE holds otherwise (REQUESTED_TRADE never sets TRADING in
 // TS). Status() computes it from the state; no field exists to
-// drift. When the bank/shop systems land and need to set
-// BANKING/SHOPPING, a real status field will be needed, and
-// Status() must be revisited then.
+// drift. The bank system landed a real status field in phase
+// 46 (status.go): BANKING is set by the bank open and cleared
+// by the interface reset, and Player.Status() reads the field
+// first, falling through to this derivation when it is NONE.
+// SHOPPING, DUELING, and PRICE_CHECKING still have no producer.
 //
 // STORAGE. One Trading per player, reached through Player.Trading().
 // TS constructs it eagerly as a Player field (Player.ts:139). The
@@ -73,11 +75,12 @@ import (
 
 // PlayerStatus is PlayerStatus.ts: the player's modal-activity
 // status. The ordinals match TS (NONE, SHOPPING, TRADING,
-// DUELING, BANKING, PRICE_CHECKING). Only NONE and TRADING are
-// producible in Go today (see the Trading file comment);
-// SHOPPING, BANKING, DUELING, and PRICE_CHECKING name the TS
-// values their systems will produce and must never be returned
-// by Status() until those systems land.
+// DUELING, BANKING, PRICE_CHECKING). NONE, TRADING, and
+// BANKING are producible in Go today (TRADING derived from the
+// trade state, BANKING from the Player status field, see
+// status.go); SHOPPING, DUELING, and PRICE_CHECKING name the
+// TS values their systems will produce and must never be
+// returned by Status() until those systems land.
 type PlayerStatus int
 
 const (
@@ -89,7 +92,8 @@ const (
 	PlayerStatusTrading
 	// PlayerStatusDueling: duelling (DUELING). Not producible.
 	PlayerStatusDueling
-	// PlayerStatusBanking: banking (BANKING). Not producible.
+	// PlayerStatusBanking: banking (BANKING). Producible since
+	// phase 46, via the Player status field (status.go).
 	PlayerStatusBanking
 	// PlayerStatusPriceChecking: price checking (PRICE_CHECKING).
 	// Not producible.
