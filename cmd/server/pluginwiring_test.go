@@ -17,7 +17,8 @@ func TestNewPluginHubLoadsCompiledInContent(t *testing.T) {
 	// SeekingArrows, which the members gate drops: AdminCommands
 	// (phase 38, no members flag) loads first, then BankBooths
 	// (phase 46, no members flag — F2P), then DateMinutes
-	// (phase 10), LumbridgeGuide (phase 23, no members flag),
+	// (phase 10), Doors (phase 48, no members flag) between
+	// DateMinutes and LumbridgeGuide, LumbridgeGuide (phase 23, no members flag),
 	// Shopkeepers (phase 41, no members flag), the phase-45
 	// standard-book effects (Standard Bindings, Standard Curses,
 	// Freezes, TeleBlock, ElementalStaves, no members flags)
@@ -39,7 +40,7 @@ func TestNewPluginHubLoadsCompiledInContent(t *testing.T) {
 		t.Fatalf("newPluginHub: %v", err)
 	}
 	loaded := hub.Loaded()
-	want := []string{"AdminCommands", "BankBooths", "DateMinutes", "LumbridgeGuide", "Shopkeepers", "Standard Bindings", "Standard Curses", "Freezes", "TeleBlock", "ElementalStaves", "WildernessDitch", "WornWeights", "EnchantJewellery", "Fishing", "Mining", "Woodcutting", "Cooking", "Crafting", "Smithing"}
+	want := []string{"AdminCommands", "BankBooths", "DateMinutes", "Doors", "LumbridgeGuide", "Shopkeepers", "Standard Bindings", "Standard Curses", "Freezes", "TeleBlock", "ElementalStaves", "WildernessDitch", "WornWeights", "EnchantJewellery", "Fishing", "Mining", "Woodcutting", "Cooking", "Crafting", "Smithing"}
 	if len(loaded) != len(want) {
 		t.Fatalf("Loaded() = %v, want %v", loaded, want)
 	}
@@ -82,7 +83,7 @@ func TestNewPluginHubLoadsMembersContentOnMembersWorld(t *testing.T) {
 		t.Fatalf("newPluginHub: %v", err)
 	}
 	loaded := hub.Loaded()
-	want := []string{"AdminCommands", "BankBooths", "DateMinutes", "GracefulOutfit", "LumbridgeGuide", "SeekingArrows", "Shopkeepers", "Standard Bindings", "Standard Curses", "Freezes", "TeleBlock", "ElementalStaves", "WildernessDitch", "WornWeights", "EnchantJewellery", "Fishing", "Fletching", "Mining", "Woodcutting", "Cooking", "Crafting", "Smithing"}
+	want := []string{"AdminCommands", "BankBooths", "DateMinutes", "Doors", "GracefulOutfit", "LumbridgeGuide", "SeekingArrows", "Shopkeepers", "Standard Bindings", "Standard Curses", "Freezes", "TeleBlock", "ElementalStaves", "WildernessDitch", "WornWeights", "EnchantJewellery", "Fishing", "Fletching", "Mining", "Woodcutting", "Cooking", "Crafting", "Smithing"}
 	if len(loaded) != len(want) {
 		t.Fatalf("Loaded() = %v, want %v", loaded, want)
 	}
@@ -96,7 +97,7 @@ func TestNewPluginHubLoadsMembersContentOnMembersWorld(t *testing.T) {
 func TestNewPluginHubSwitchDisablesDateMinutes(t *testing.T) {
 	// A world.json switch turning DateMinutes off keeps it out of
 	// the loaded set, and the hub logs it as disabled. AdminCommands,
-	// BankBooths, LumbridgeGuide, Shopkeepers, WildernessDitch, WornWeights,
+	// BankBooths, Doors, LumbridgeGuide, Shopkeepers, WildernessDitch, WornWeights,
 	// Crafting, Woodcutting, Fishing, Mining, Cooking and Smithing (no switches)
 	// still load (AdminCommands first; BankBooths second, between
 	// AdminCommands and LumbridgeGuide; Shopkeepers between
@@ -113,8 +114,8 @@ func TestNewPluginHubSwitchDisablesDateMinutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newPluginHub: %v", err)
 	}
-	if loaded := hub.Loaded(); len(loaded) != 18 || loaded[0] != "AdminCommands" || loaded[1] != "BankBooths" || loaded[2] != "LumbridgeGuide" || loaded[3] != "Shopkeepers" || loaded[4] != "Standard Bindings" || loaded[5] != "Standard Curses" || loaded[6] != "Freezes" || loaded[7] != "TeleBlock" || loaded[8] != "ElementalStaves" || loaded[9] != "WildernessDitch" || loaded[10] != "WornWeights" || loaded[11] != "EnchantJewellery" || loaded[12] != "Fishing" || loaded[13] != "Mining" || loaded[14] != "Woodcutting" || loaded[15] != "Cooking" || loaded[16] != "Crafting" || loaded[17] != "Smithing" {
-		t.Fatalf("Loaded() = %v, want [AdminCommands BankBooths LumbridgeGuide Shopkeepers Standard Bindings Standard Curses Freezes TeleBlock ElementalStaves WildernessDitch WornWeights EnchantJewellery Fishing Mining Woodcutting Cooking Crafting Smithing]", loaded)
+	if loaded := hub.Loaded(); len(loaded) != 19 || loaded[0] != "AdminCommands" || loaded[1] != "BankBooths" || loaded[2] != "Doors" || loaded[3] != "LumbridgeGuide" || loaded[4] != "Shopkeepers" || loaded[5] != "Standard Bindings" || loaded[6] != "Standard Curses" || loaded[7] != "Freezes" || loaded[8] != "TeleBlock" || loaded[9] != "ElementalStaves" || loaded[10] != "WildernessDitch" || loaded[11] != "WornWeights" || loaded[12] != "EnchantJewellery" || loaded[13] != "Fishing" || loaded[14] != "Mining" || loaded[15] != "Woodcutting" || loaded[16] != "Cooking" || loaded[17] != "Crafting" || loaded[18] != "Smithing" {
+		t.Fatalf("Loaded() = %v, want [AdminCommands BankBooths Doors LumbridgeGuide Shopkeepers Standard Bindings Standard Curses Freezes TeleBlock ElementalStaves WildernessDitch WornWeights EnchantJewellery Fishing Mining Woodcutting Cooking Crafting Smithing]", loaded)
 	}
 	if !strings.Contains(buf.String(), "disabled=") {
 		t.Errorf("hub log %q does not report the disabled plugin", buf.String())

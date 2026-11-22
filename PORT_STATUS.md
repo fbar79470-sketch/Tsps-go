@@ -318,6 +318,26 @@ first, then adding all skills — see "Next modules".)
   12348 at (3207,3217,0) face 1: ADD **1544** at (3207,3218)
   rot 2 — the override case, not id+1 — + DEL at
   (3207,3217) rot 1, sound 62; walk to (3207,3217)).
+  Parent verification note: the run-2 logs' RESULT lines
+  still record failed checks — 10 in total — even though
+  every BEHAVIOR check passes (open leaf on the wire,
+  closed leaf removed, walk-through, close ADD + sound,
+  far-side refusal). The 10 break down as: 7 premise
+  checks asserting the closed leaf is in the login
+  snapshot (wrong premise — upstream skips base-map
+  objects in `onRegionChange`, so the snapshot never
+  holds them; the report's claim that the premises were
+  corrected before run 2 is not what the logs show — the
+  checks still ran and failed in the run-2 logs); 2 "open leaf removed
+  (dels=0)" on the single and double closes (the gap 31(i)
+  first-tick DEL loss, already documented above); 1
+  doubleclick check asserting click 2 plays the close
+  sound (wrong expectation — silence is correct, since
+  1535 no longer exists after a real open; the check
+  still ran and failed in the run-2 log). None of the 10
+  is a port bug beyond gap 31(i); the "all four PASS"
+  verdict stands for the behavior, with the failed checks
+  explained as above, not corrected away.
   Run 1 of the same legs failed 0-for-4 and found the bug
   below; run 2 re-ran on the fixed engine. Two harness
   premises were corrected live, not the engine: (a) the
