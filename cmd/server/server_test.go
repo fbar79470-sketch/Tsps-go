@@ -61,6 +61,7 @@ func writeTestRoot(t *testing.T) {
 		"ground-items.json":      "[]",
 		"npc-combat-defs.json":   "{}",
 		"npc-animations.json":    "{}",
+		"npc-drops.json":         `{"tables": {}, "npcs": {}}`,
 		"shops.json":             "[]",
 		"custom-shops.json":      "[]",
 		// Phase 14: npc-dialogues.json is required by the

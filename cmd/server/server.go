@@ -292,6 +292,10 @@ func buildServer(opts Options) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("loading game definitions: %w", err)
 	}
+	// NPC drops wiring (see npcdropswiring.go): installed after the
+	// definition load (the table source + roller read the loaded
+	// Store) and before the engine starts.
+	installNpcDropsWiring(wilderness, store)
 	// Shop manager (see shopwiring.go): built after the
 	// definition load (the runtime shops initialize from the
 	// loaded definitions) and before the dialogue playback

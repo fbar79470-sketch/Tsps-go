@@ -12,7 +12,8 @@ package game
 // PLUGIN server/plugins/npcs/NpcDrops.plugin.js (wiki-dump
 // tables) listening to onNpcDeath. Core only emits the
 // death event. Go dispatches CombatDeathEvent through the
-// hook seam and rolls nothing.
+// hook seam and rolls nothing in core; phase 50 ported the
+// plugin side (internal/content/npcdrops).
 //
 // Player item loss (kept-items rules, skull/protect item,
 // untradeables, graves, bones) lives in playerdeath.go: the

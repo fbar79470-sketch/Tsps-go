@@ -8,17 +8,15 @@ findings) lives outside this repository; status values below mean:
 ported, gaps listed), **NOT STARTED** (absent — nothing here
 pretends otherwise).
 
-Last updated: 2026-11-22 (phase 49 run: Ladders — the climb
-mechanism (ClimbLinks destination resolution + climb task +
-38-name plugin + gangplank Cross) in `internal/content/ladders`,
-live-verified on ten legs: stairs up/down, Top-floor, the
-Lumbridge cellar trapdoor both ways (gap 31(d) closed), the
-Wizards' Tower declared-link pair both ways, the ambiguous-Climb
-prompt, a gangplank crossing, and a no-other-end refusal. No
-port bugs found live. 5,247 tests passing, 32 packages. Quests are
-postponed per Tyler's 2026-11-16 instruction (Doric's Quest
-picked but deferred); Tyler decided 2026-11-17: combat leftovers
-first, then adding all skills — see "Next modules".)
+Last updated: 2026-11-28 (phase 50 run: NPC Drops — the drop-table
+system (loader + roller + `onNpcDeath` integration) for all 1,106 tables,
+live-verified on six legs: goblin, chicken, cow, man, rat, fire giant.
+One live-found wiring bug fixed in-phase (the Phase 32 hub-contract
+violation: seams installed after plugin Load were snapshotted nil at
+Register). 5,300 tests passing, 33 packages. Quests are postponed per
+Tyler's 2026-11-16 instruction (Doric's Quest picked but deferred); Tyler
+decided 2026-11-17: combat leftovers first, then adding all skills — see
+"Next modules".)
 
 ## What was verified in this run
 
@@ -425,6 +423,91 @@ first, then adding all skills — see "Next modules".)
   tile past the far half, not the 3 tiles `crossDestination`
   describes — `landingTile` picks the nearest
   walkable/reachable tile to the hint (see gap 32(d)).
+- Phase 50 (`go build ./...`, `go vet ./...`, `gofmt -l .`:
+  clean. `CGO_ENABLED=0 go build ./...`: clean. 897 `.go`
+  files, 33 packages (new `internal/content/npcdrops`; no new
+  hub family — 63/108 firable, unchanged; `onNpcDeath` was
+  already firable and the `npc-drops:*` custom events ride the
+  generic `OnCustomEvent` mechanism).
+- Phase 50 `go test ./... -p 1 -count=1 -v`: all 33 packages
+  pass (5,300 passing test cases: 4,054 top-level + 1,246
+  subtests, 0 failures, 0 skips — 5,247 from phase 49 + 53
+  new: loader 8, roller 22, integration 18 (17 Worker C +
+  the coordinator's lazy-resolution regression test),
+  wiring/converter 3 top-level, + 2 subtests from the
+  extended loader table cases; a final confirmation run
+  after all live legs also passed 33/33, exit 0).
+- Phase 50 `go test -race ./...`: clean on the first full
+  run (exit 0, 0 DATA RACE warnings, 33/33 packages ok).
+  No known-flake re-runs needed this phase.
+- Live phase-50 smoke tests (throwaway harness in
+  `/home/hatch/smoke50/`, six legs driving a real WebSocket
+  client against the real server binary + real rev-242 cache
+  from fresh temp roots; legs run singly; the driver observes
+  GROUND_ITEMS_DELTA opcode 55 upserts + loot-tracker script
+  7192 frames, script args being the exact per-kill record):
+  goblin (3036, 8 kills, always Bones 526 + Coins 995 x15 /
+  Hammer 2347 / Bronze spear 1237 / Bronze bolts 877 x8 /
+  Goblin mail 288; an earlier run also saw the tertiary
+  Ensouled goblin head 13448 live), chicken (1174, 8 kills,
+  always Bones 526 + Raw chicken 2138 + Feather 314 x5/x15,
+  Nothing twice), cow (2790, 6 kills, always Cowhide 1739 +
+  Raw beef 2132 + Bones 526, tertiary Clue scroll (beginner)
+  23182 on 2 of 6), man (3106, 12 kills, always Bones 526 +
+  Coins 995 x3/x5 / Bronze bolts 877 x6/x10 / Earth talisman
+  1440, separate-roll Energy potion(3) 3010 on 2 of 12), rat
+  (2854, 6 kills, empty main table: Rat bone 7836 once, no
+  drops at all on the other 5 — the 1/1 Rat's tail never
+  dropped, correctly, with no quest plugin to allow it),
+  fire giant (2079, 3 kills, always Big bones 532 + Fire rune
+  554 x150 / Coins 995 x60 / Uncut sapphire 1623 — the shared
+  `gem` subtable resolving live; earlier runs also saw Fire
+  rune 554 x37, Chaos rune 562 x5, tertiary Fire giant bone
+  7872) — all six legs PASS, 0 CHECK FAIL on the final runs.
+  One live-found wiring bug fixed in-phase (see below); three
+  harness premises were corrected live, not the engine: (a)
+  the driver filtered ground items to the NPC's attack-time
+  tile, but NPCs wander while fighting — fixed to the death
+  tile, then to a tile-free collection (the recorded death
+  tile lagged the server death tile by up to 11 tiles for
+  cows); (b) the server re-sends visible stacks in
+  GROUND_ITEMS (54) snapshots, so an earlier kill's stack
+  could be counted again — fixed by deduping on (stack id,
+  qty), which keeps stackable merges visible; (c) the
+  fire-giant leg retried the same unreachable giant (idx 449)
+  three times behind dungeon walls — fixed by blacklisting
+  timed-out runtime indices. Two single occurrences never
+  reproduced on re-run, recorded honestly: the first cow
+  run's kill 6 produced 0 script-7192 frames (the NPC left
+  the client's sync before dying server-side, or the attack
+  never engaged), and the first fire-giant runs' 90 s death
+  timeouts. Neither is a drops defect: every landed kill in
+  every run dropped correctly. NOT observed live: the rare
+  drop table (1/128; 0 hits in 9 fire-giant kills) and the
+  herb subtable — both unit-covered with scripted RNG; noted
+  drops; `::reloaddrops` live; the 100-tick reveal /
+  300-tick despawn timing (see gap 33).
+- Phase 50 live-found bug: the NpcDrops plugin was inert on
+  the first post-integration goblin leg (8 kills, empty
+  ground, 0 script-7192 frames). Root cause: `hub.Load()`
+  runs Register at `cmd/server/server.go:185`, but
+  `installNpcDropsWiring` runs at :298 (after the Store
+  loads), and `newNpcDrops()` snapshotted the nil installed
+  source/roller into struct fields — the Phase 32
+  hub-contract violation (surfaces installed after plugin
+  Load must be resolved lazily, never captured in Register).
+  Fix (coordinator, `internal/content/npcdrops/npcdrops.go`):
+  seam accessors `tableSource()` / `tableRoller()` /
+  `dropReloader()` / `wildernessCheck()` read the currently
+  installed seam at call time (field first, for test
+  injection) + regression test
+  `TestPluginFiresWhenSeamsInstalledAfterLoad`. Also fixed
+  in-integration: the loader dropped quantity-alternative
+  conditions (the dump carries `preferred_method` /
+  `bounty_task` / `perfect_kill` conditions) — added
+  `NpcDropQuantityCondition` / `NpcDropQuantityAlternative`
+  parsing; behaviorally invisible this phase (empty context
+  → base quantity wins) but preserves data fidelity.
 - Phase 44 (`go build ./...`, `go vet ./...`, `gofmt -l .`:
   clean. `CGO_ENABLED=0 go build ./...`: clean. 835 `.go`
   files, 27 packages (new `internal/content/crafting`, 26
@@ -1367,7 +1450,7 @@ first, then adding all skills — see "Next modules".)
 | P2 | Interface runtime: `Player` interface id, `PacketSender` interface mounts, `InterfaceLayoutRegistry`, `InterfaceActionClickOpcode`, entered-amount/syntax prompts, the live varp/varbit store | `internal/game` (interface id + close gate, entered actions), `internal/session` (mount tracking + sender surface, varp store), `internal/definition` (layout open dispatch), `internal/listeners` (action dispatch, prompt answers, close case), `internal/plugins` (interface families), `cmd/server` (wiring) | DONE (phase 18, live-verified: interface open/close/layering + close-on-movement/logout/death + layout open dispatch on all 7 surfaces + action dispatch to hub hooks with prompt-first order + entered-amount/syntax prompts + varp/varbit store with change detection, varbit packing, and replay; session-only, nothing persists; `VarManager` transform plumbing, `registerCustomInterface`, bank interface flows, and the per-player vars seam are gaps — see notes) |
 | P2 | Clans/social: `PlayerRelations`, social-packet dispatch, friends-chat-snapshot + clan encoders | `internal/game` (relations, names, chat gate), `internal/protocol` (social decoders/encoders), `internal/session` (social senders), `internal/listeners` (social dispatch), `internal/persist` (relations ownership), `internal/plugins` (social-packet variants), `cmd/server` (wiring) | DONE (phase 19, live-verified: whole `PlayerRelations` port + live chat gate + all 8 social-packet kinds emitted to the hub + snapshot/clan encoders + relations owned save state + logout presence-offline; friends-chat channels + the clan system are plugin content (FriendsList/Clans, NOT ported — the engine unlocks them); the legacy friend/ignore presence sends are no-ops, exactly as in TS (`PlayerSession.write` is a no-op upstream) — live presence comes from the snapshot, which content sends; chat modes session-only — see notes) |
 | P3 | Plugin hub: `PluginManager`, `PluginTypes` | `internal/plugins` + `cmd/server` (`pluginwiring.go`) | DONE (compile-time registry, dependency-ordered loading, config-declaration validation, world.json switches, members-gating, lifecycle + custom-event + command/social-packet + object-interaction + dialogue + zone + combat + shop/trade + interface + skills + world-entity-interaction hooks with per-hook error isolation, gate contracts, scoped core surface, login extensions; the social-packet family fires all 8 kinds since phase 19 (same family, not a new one — the count is unchanged); onCanAttack became firable in phase 26; onSpellDisabled + onSpellRuneBypass became firable in phase 27; onShouldDropItemsOnDeath + onShouldKeepItemOnDeath + onPlayerDefeated + onPlayerDeathItemDrop + onPlayerDeathDrops became firable in phase 28 (51 of 108); the onItemAction family became firable in phase 32 (onItemAction/onItemActionNamed/onItemFirstAction/onCanUseItem, 54 of 108); the onNpcClick family became firable in phase 33 (onNpcClick, with the NPC remains-delay + transform seams in the death flow) and the onItemOnItem family became firable in phase 33 (onItemOnItem/onItemOnItemNamed, riding INVENTORY_USE_ON kind 4 — there is no separate item-on-item opcode), and the onNpcInteraction family became firable in phase 35 (onNpcInteraction, name hooks after the onNpcClick bindings — TS order, `NPCOptionPacketListener.ts:122/:132` — with the `DefinitionName`/`Action`/`Actions` fields on the hub event; `OnNpcsInteraction`/`OnBeforeNpcInteraction`/`OnNpcRoute` stay table-only), and the onAnyNpcInteraction family became firable in phase 41 (onAnyNpcInteraction, the generic list last after the name hooks — TS order, `PluginManager.ts:1246-1263` — with `Hub.AddNpcClickHook`/`Hub.AddAnyNpcInteractionHook` engine installs that bypass the load seal so Shopkeepers bindings can be installed post-Load; `OnNpcsInteraction`/`OnBeforeNpcInteraction`/`OnNpcRoute` stay table-only), and the onSpellOnItem family became firable in phase 43 (onSpellOnItem, fired from castSpellOnItem in the MagicOnItem listener through the listeners' `SpellHooks.EmitSpellOnItem` seam wired in spellwiring.go; Superheat Item is its first consumer), 59 of 108; the onButtonClick + onButton families became firable in phase 46 (fired by Hub.EmitButtonClick from the widget-action fallthrough's simple-click fallback; the Bank content is the first consumer), and the onSpellCast + onSpellOnObject families became firable in phase 45 (fired through the listeners' SpellHooks seams — wired in the paused Magic work, live-verified in the phase-45 resume via smoke45 leg (a)), 63 of 108; 45 of 108 hook families have no registration method yet — documented in the unfired-family table with the missing system named — and 29 of 95 non-hook members are ported, and 12 of 191 Core members — see notes; hub-count correction in phase 31: earlier versions of this document said 53/108, counting registration *methods* as *families* — Go has 63 `Api.On*` methods but four are named overloads of already-counted families (`OnObjectInteractionNamed`, `OnItemOnObjectNamed`, `OnItemActionNamed`, `OnItemOnItemNamed`), so 63 distinct families are firable (67 methods) and 45 are table-only; `hooks.go`'s header says sixty-three (updated in phase 46; the phase-35 plan's "5 named overloads" was wrong — recount: exactly 4 `*Named` methods). The +4 since phase 43 split two and two: Bank (phase 46) made `onButtonClick` + `onButton` firable (fired by Hub.EmitButtonClick from the widget-action fallthrough's simple-click fallback), and Magic (phase 45) made `onSpellCast` + `onSpellOnObject` firable (wired through the listeners' SpellHooks seams — the emit sites were missing until the phase-45 integration fixed them live; see the phase-45 paragraph) |
-| P3 | All `plugins/` content (2,907 JS files, 789,355 lines) | Go packages under `internal/content/` | PARTIAL (25 of 577 entries ported: DateMinutes (phase 10), GracefulOutfit + WornWeights (phase 22), LumbridgeGuide (phase 23), SeekingArrows (phase 24), Woodcutting (phases 32–33 — core loop + all sub-units except the Guild, which needs Tyler's `woodcutting-guild.json` import approval), Fletching (phase 34 — full skill: Shared loop, Recipes, Spool, Diaries, CreationMenu seam, all live-verified), Fishing (phase 35 — core loop + 8 of 10 sub-units, MinnowPlatform / Gita exchange / Guild door deferred, live-verified in 4 modes), Cooking (phase 36 — full skill: Cookers, Recipes, Wine, Churn, SacredEel, LeapingFish, Gnome, live-verified on fire/range/wine legs), AdminCommands (phase 38 — `::item` only, the first registered command, live-verified: admin spawn + denial path), WildernessDitch (phase 40 — `Cross` on object 23271 with the ForceMovement glide + click delay, live-verified: south/north/turn crossings + the wall leg), Shopkeepers (phase 41 — `shops.json` npcInteractions bindings via onAnyNpcInteraction + 19 item / 13 point currencies, live-verified: shop-open/buy/sell/shared/tokkul legs, 32 checks), Mining (phase 42 — full skill: core loop + all 8 sub-units, live-verified: copper/tin, depletion, full-inventory, walk-away legs, 18 checks), Smithing (phase 43 — full skill: smelting + anvil + cannonballs + godswords + dragon shields + spears + Superheat, new onSpellOnItem seam, live-verified: smelt/smith/menu/walkaway/ore-on-furnace/bar-on-anvil/full legs, 38 checks), Crafting (phase 44 — full skill: core loop + all 12 sub-units, `crafting:spun` producer for Fletching's spool, live-verified: jewellery/spinning/cutting/leather/pottery/walkaway/fall-through legs, 68 of 71 checks — the 3 failures are a corrected leg premise, see the phase-44 paragraph), Bank (phase 46 — player-facing banking: open at booths + bankers, deposit/withdraw, bank interface, placeholders, tabs, search, new onButtonClick/onButton hub families; live-verified: open-booth/deposit/withdraw/persist/full/close/open-banker legs, 44 of 44 checks — see the phase-46 paragraph), Magic (phase 45 — standard-book effects: StandardBindings + StandardCurses + Freezes + TeleBlock + ElementalStaves, EnchantJewellery (7 spells, 7-tick repeat), Ancient combat spells in the engine (16 spells, not a content entry); new onSpellCast/onSpellOnObject hub families, live-verified; live-verified: hub-proof/bind/Ice Rush/Ancient combat/Enchant/autocast/failure legs — see the phase-45 paragraph), NpcDialogues (phase 47 — Talk-to bindings: `Predecessors` filled from the transcribed retired-NPC table (12 mappings), id-index resolution proven with fixtures + live-verified with a smoke-root overlay, name/alias fallback live-verified on 6 Lumbridge NPCs; the real `npc-dialogue-index.json` was imported 2026-11-22 on Tyler's approval (7,438 NPC ids / 12,450 page entries), so the id-index path now runs on real data — see gap 30; live-verified: guide/hans/banker/duke/aereck/man/shopkeeper-index legs, 7 of 8 — the 8th is a corrected leg premise, see the phase-47 paragraph), Doors (phase 48 — door mechanism: startup cache-scan catalog (556 closed→open pairs) + toggle engine (single/double/wooden-gate/composite/self-opening/in-place/own-tile) + pass-through gates + `crossingFor`, 500-tick auto-close, `door:toggle`/`door:open`/`door:state` events with no consumers yet; live-verified: single/double/wooden-gate/kitchen legs, all four PASS — see the phase-48 paragraph; one live-found wiring bug fixed in-phase, one first-tick LOC_DEL defect carried forward — see gap 31), Ladders (phase 49 — climb mechanism: ClimbLinks destination resolution (declared links + other-end search + inert-segment chains + underground ±6400 + landing tiles + `toEnd` chaining) + climb task (anim 828/827, 1-cycle delay, movement block) + 38-name plugin registrations + ambiguous-Climb prompt + gangplank Cross + `ladders:climb` / `ladders:climbUp` / `ladders:climbDown` events, boot-wired in `cmd/server`; live-verified: stairs-up/down, top-floor, trapdoor-down/up, tower-down/up, prompt, gangplank, no-end legs, 10 of 10 PASS — see the phase-49 paragraph; area/quest emitters + claimants NOT STARTED — see gap 32), all live-verified; the rest per `CONTENT_MIGRATION_PLAN.md`, piece by piece with Tyler's direction; no wholesale port) |
+| P3 | All `plugins/` content (2,907 JS files, 789,355 lines) | Go packages under `internal/content/` | PARTIAL (26 of 577 entries ported: DateMinutes (phase 10), GracefulOutfit + WornWeights (phase 22), LumbridgeGuide (phase 23), SeekingArrows (phase 24), Woodcutting (phases 32–33 — core loop + all sub-units except the Guild, which needs Tyler's `woodcutting-guild.json` import approval), Fletching (phase 34 — full skill: Shared loop, Recipes, Spool, Diaries, CreationMenu seam, all live-verified), Fishing (phase 35 — core loop + 8 of 10 sub-units, MinnowPlatform / Gita exchange / Guild door deferred, live-verified in 4 modes), Cooking (phase 36 — full skill: Cookers, Recipes, Wine, Churn, SacredEel, LeapingFish, Gnome, live-verified on fire/range/wine legs), AdminCommands (phase 38 — `::item` only, the first registered command, live-verified: admin spawn + denial path), WildernessDitch (phase 40 — `Cross` on object 23271 with the ForceMovement glide + click delay, live-verified: south/north/turn crossings + the wall leg), Shopkeepers (phase 41 — `shops.json` npcInteractions bindings via onAnyNpcInteraction + 19 item / 13 point currencies, live-verified: shop-open/buy/sell/shared/tokkul legs, 32 checks), Mining (phase 42 — full skill: core loop + all 8 sub-units, live-verified: copper/tin, depletion, full-inventory, walk-away legs, 18 checks), Smithing (phase 43 — full skill: smelting + anvil + cannonballs + godswords + dragon shields + spears + Superheat, new onSpellOnItem seam, live-verified: smelt/smith/menu/walkaway/ore-on-furnace/bar-on-anvil/full legs, 38 checks), Crafting (phase 44 — full skill: core loop + all 12 sub-units, `crafting:spun` producer for Fletching's spool, live-verified: jewellery/spinning/cutting/leather/pottery/walkaway/fall-through legs, 68 of 71 checks — the 3 failures are a corrected leg premise, see the phase-44 paragraph), Bank (phase 46 — player-facing banking: open at booths + bankers, deposit/withdraw, bank interface, placeholders, tabs, search, new onButtonClick/onButton hub families; live-verified: open-booth/deposit/withdraw/persist/full/close/open-banker legs, 44 of 44 checks — see the phase-46 paragraph), Magic (phase 45 — standard-book effects: StandardBindings + StandardCurses + Freezes + TeleBlock + ElementalStaves, EnchantJewellery (7 spells, 7-tick repeat), Ancient combat spells in the engine (16 spells, not a content entry); new onSpellCast/onSpellOnObject hub families, live-verified; live-verified: hub-proof/bind/Ice Rush/Ancient combat/Enchant/autocast/failure legs — see the phase-45 paragraph), NpcDialogues (phase 47 — Talk-to bindings: `Predecessors` filled from the transcribed retired-NPC table (12 mappings), id-index resolution proven with fixtures + live-verified with a smoke-root overlay, name/alias fallback live-verified on 6 Lumbridge NPCs; the real `npc-dialogue-index.json` was imported 2026-11-22 on Tyler's approval (7,438 NPC ids / 12,450 page entries), so the id-index path now runs on real data — see gap 30; live-verified: guide/hans/banker/duke/aereck/man/shopkeeper-index legs, 7 of 8 — the 8th is a corrected leg premise, see the phase-47 paragraph), Doors (phase 48 — door mechanism: startup cache-scan catalog (556 closed→open pairs) + toggle engine (single/double/wooden-gate/composite/self-opening/in-place/own-tile) + pass-through gates + `crossingFor`, 500-tick auto-close, `door:toggle`/`door:open`/`door:state` events with no consumers yet; live-verified: single/double/wooden-gate/kitchen legs, all four PASS — see the phase-48 paragraph; one live-found wiring bug fixed in-phase, one first-tick LOC_DEL defect carried forward — see gap 31), Ladders (phase 49 — climb mechanism: ClimbLinks destination resolution (declared links + other-end search + inert-segment chains + underground ±6400 + landing tiles + `toEnd` chaining) + climb task (anim 828/827, 1-cycle delay, movement block) + 38-name plugin registrations + ambiguous-Climb prompt + gangplank Cross + `ladders:climb` / `ladders:climbUp` / `ladders:climbDown` events, boot-wired in `cmd/server`; live-verified: stairs-up/down, top-floor, trapdoor-down/up, tower-down/up, prompt, gangplank, no-end legs, 10 of 10 PASS — see the phase-49 paragraph; area/quest emitters + claimants NOT STARTED — see gap 32), NpcDrops (phase 50 — drop-table system: loader for the three imported files (1,106 tables, 3,193 NPCs, 14,737 entries + 1,592 tertiary) + roller (flat path: always / pre-roll groups / separate rolls / one weighted main roll over `main_max_roll` / tertiary groups / tertiary rolls, shared subtables incl. seed bands + depth cap 4, gem→mega-rare Legends' Quest gate) + `onNpcDeath` integration (loot-tracker script 7192, `::reloaddrops` OWNER command, `npc-drops:*` custom events emitted with no consumers yet); live-verified: goblin/chicken/cow/man/rat/fire-giant legs, all six PASS — see the phase-50 paragraph; ordered path + boss multiplier + Ring of Wealth + diary noted drops NOT STARTED — see gap 33), all live-verified; the rest per `CONTENT_MIGRATION_PLAN.md`, piece by piece with Tyler's direction; no wholesale port) |
 | P3 | Bots: `plugins/bots/` + bot runtime | undecided | NOT STARTED |
 | P3 | WebRTC transport | undecided | NOT STARTED |
 | P3 | Browser host: `BrowserHostHttpBridge`, IndexedDB persistence | undecided | NOT STARTED |
@@ -2156,6 +2239,9 @@ and the combat-method provider registry content consults.
 Drops are NOT rolled by core: no `npc-drops:roll` exists in
 TS core — drops are plugin content listening to `onNpcDeath`,
 and Go dispatches `CombatDeathEvent` through the hook seam.
+Phase 50 ported that plugin content (`internal/content/npcdrops`,
+1,106 tables) — core still rolls nothing; see the phase-50 paragraph
+and gap 33.
 Save split: `specPercentage` is owned (restore + snapshot);
 `fightType` is owned since phase 30 (login restore via
 `applyEntryFightType`, snapshot writes the live fight type,
@@ -4990,6 +5076,63 @@ pick is Tyler's. Verification counts are unchanged from phase 24
     (h) Gap 31(d) (trapdoors that Climb-down) is CLOSED by
     this phase: the Lumbridge cellar trapdoor climbs down and
     back up live.
+
+33. Phase 50 residual gaps (NPC Drops; all documented at the
+    port sites, none silent): (a) Ordered path NOT STARTED —
+    the 4 Forgotten Four tables (`duke_sucellus`,
+    `the_leviathan`, `the_whisperer`, `vardorvis`) fail closed
+    (main roll skipped with a log line, always + tertiary
+    still resolve); no `npc-drops:reward-state` /
+    `:reward-state-commit` provider, no cyclic progression,
+    no `tertiary_groups` exclusive picks. Quartz/tablet/orb
+    scaling curves are unresolved upstream. (b) Boss rare
+    multiplier NOT STARTED — world config
+    `NpcDrops:bossRareMultiplier` does not exist; at the
+    default 1 every entry is in the main pool, so no boost
+    logic is exact. The ordered-path <1/100 vs flat-path
+    <1/10 unique-entry threshold discrepancy (survey §1.6)
+    is unresolved and belongs to this follow-up. (c) Ring of
+    Wealth NOT STARTED — `nothing` rows stay in the RDT /
+    gem / megaRare pools (OSRS no-RoW behavior) and RoW coin
+    auto-collect (995/6529/21555 into inventory) does not
+    exist; coins drop on the ground normally. (d) Diary
+    noted-drop marking NOT STARTED — no diary system in Go,
+    so `npc-drops:roll` has no noted-drop listeners. (e)
+    Location filtering NOT STARTED — `drop-locations.json`
+    was not imported and `withoutOtherLocations` does not
+    exist, so place-gated rows roll anywhere (over-drop; the
+    place-gated subset is uncounted, inside the 533 "Only
+    dropped…" rows, most of which are quest phrasing).
+    (f) `applyWikiCorrections` boss fixes NOT STARTED —
+    Zulrah/Vorkath `rolls = 2` (currently roll once), Mad
+    Angel / Skotizo / Amoxliatl / Alchemical Hydra bespoke
+    fixes, animated bronze armour separate rolls, Kalphite
+    Queen noted items. Only the Slayer-key strip landed.
+    (g) Side channels with no consumers: the plugin emits
+    `npc-drops:extra-rolls`, `:table-rolls`, `:roll-shared`,
+    `:roll-table`, `:place` (CoX, chests, multi-player boss
+    rewards) but nothing listens. (h)
+    `npc-drops-custom.json` world overrides +
+    `npc-drops:claim` shared-loot bosses (Wilderness bosses)
+    + `npc-drops:location` movers (Zulrah/CoX) NOT STARTED —
+    the events are emitted, no listeners exist; also
+    `npc-drops:location` `public:true` cannot be honoured on
+    the current `DropGroundItem` seam (always owner-only,
+    goes global at 100 ticks). (i) Slayer keys (23083
+    Brimstone / 23490 Larran's) are stripped from drop tables
+    at load; they are rolled by the Slayer plugin when it
+    lands. (j) Clue-scroll / ensouled-head / champion-scroll
+    tertiary rows roll but no clue/ensouled/champion system
+    consumes them. (k) RDT + herb subtable live observation:
+    the rare drop table (1/128) was not hit in 9 live
+    fire-giant kills and the herb subtable was not hit live
+    either — both are unit-covered with scripted RNG only.
+    (l) Quest-noted rows roll normally with no quest system
+    to answer verdicts — observed live: Fire giant bone 7872
+    (Rag and Bone Man II) dropped on 3 of 6 fire-giant kills
+    across the runs. The 1/1 conditional-tertiary rule IS
+    implemented (Rat's tail never dropped without a quest
+    plugin answering `allowed: true`).
 
 ## Next modules, in priority order
 

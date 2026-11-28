@@ -20,7 +20,8 @@ func TestNewPluginHubLoadsCompiledInContent(t *testing.T) {
 	// (phase 10), Doors (phase 48, no members flag) between
 	// DateMinutes and LumbridgeGuide, Ladders (phase 49, no
 	// members flag) between Doors and LumbridgeGuide,
-	// LumbridgeGuide (phase 23, no members flag),
+	// LumbridgeGuide (phase 23, no members flag), NpcDrops
+	// (phase 50, no members flag) between LumbridgeGuide and
 	// Shopkeepers (phase 41, no members flag), the phase-45
 	// standard-book effects (Standard Bindings, Standard Curses,
 	// Freezes, TeleBlock, ElementalStaves, no members flags)
@@ -42,7 +43,7 @@ func TestNewPluginHubLoadsCompiledInContent(t *testing.T) {
 		t.Fatalf("newPluginHub: %v", err)
 	}
 	loaded := hub.Loaded()
-	want := []string{"AdminCommands", "BankBooths", "DateMinutes", "Doors", "Ladders", "LumbridgeGuide", "Shopkeepers", "Standard Bindings", "Standard Curses", "Freezes", "TeleBlock", "ElementalStaves", "WildernessDitch", "WornWeights", "EnchantJewellery", "Fishing", "Mining", "Woodcutting", "Cooking", "Crafting", "Smithing"}
+	want := []string{"AdminCommands", "BankBooths", "DateMinutes", "Doors", "Ladders", "LumbridgeGuide", "NpcDrops", "Shopkeepers", "Standard Bindings", "Standard Curses", "Freezes", "TeleBlock", "ElementalStaves", "WildernessDitch", "WornWeights", "EnchantJewellery", "Fishing", "Mining", "Woodcutting", "Cooking", "Crafting", "Smithing"}
 	if len(loaded) != len(want) {
 		t.Fatalf("Loaded() = %v, want %v", loaded, want)
 	}
@@ -87,7 +88,7 @@ func TestNewPluginHubLoadsMembersContentOnMembersWorld(t *testing.T) {
 		t.Fatalf("newPluginHub: %v", err)
 	}
 	loaded := hub.Loaded()
-	want := []string{"AdminCommands", "BankBooths", "DateMinutes", "Doors", "GracefulOutfit", "Ladders", "LumbridgeGuide", "SeekingArrows", "Shopkeepers", "Standard Bindings", "Standard Curses", "Freezes", "TeleBlock", "ElementalStaves", "WildernessDitch", "WornWeights", "EnchantJewellery", "Fishing", "Fletching", "Mining", "Woodcutting", "Cooking", "Crafting", "Smithing"}
+	want := []string{"AdminCommands", "BankBooths", "DateMinutes", "Doors", "GracefulOutfit", "Ladders", "LumbridgeGuide", "NpcDrops", "SeekingArrows", "Shopkeepers", "Standard Bindings", "Standard Curses", "Freezes", "TeleBlock", "ElementalStaves", "WildernessDitch", "WornWeights", "EnchantJewellery", "Fishing", "Fletching", "Mining", "Woodcutting", "Cooking", "Crafting", "Smithing"}
 	if len(loaded) != len(want) {
 		t.Fatalf("Loaded() = %v, want %v", loaded, want)
 	}
@@ -104,8 +105,9 @@ func TestNewPluginHubSwitchDisablesDateMinutes(t *testing.T) {
 	// BankBooths, Doors, Ladders, LumbridgeGuide, Shopkeepers, WildernessDitch, WornWeights,
 	// Crafting, Woodcutting, Fishing, Mining, Cooking and Smithing (no switches)
 	// still load (AdminCommands first; BankBooths second, between
-	// AdminCommands and LumbridgeGuide; Shopkeepers between
-	// LumbridgeGuide and the phase-45 standard-book effects
+	// AdminCommands and LumbridgeGuide; NpcDrops (phase 50, no
+	// members flag) between LumbridgeGuide and Shopkeepers;
+	// Shopkeepers between NpcDrops and the phase-45 standard-book effects
 	// (Standard Bindings, Standard Curses, Freezes, TeleBlock,
 	// ElementalStaves), which load between Shopkeepers and
 	// WildernessDitch; EnchantJewellery between WornWeights and
@@ -118,8 +120,8 @@ func TestNewPluginHubSwitchDisablesDateMinutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newPluginHub: %v", err)
 	}
-	if loaded := hub.Loaded(); len(loaded) != 20 || loaded[0] != "AdminCommands" || loaded[1] != "BankBooths" || loaded[2] != "Doors" || loaded[3] != "Ladders" || loaded[4] != "LumbridgeGuide" || loaded[5] != "Shopkeepers" || loaded[6] != "Standard Bindings" || loaded[7] != "Standard Curses" || loaded[8] != "Freezes" || loaded[9] != "TeleBlock" || loaded[10] != "ElementalStaves" || loaded[11] != "WildernessDitch" || loaded[12] != "WornWeights" || loaded[13] != "EnchantJewellery" || loaded[14] != "Fishing" || loaded[15] != "Mining" || loaded[16] != "Woodcutting" || loaded[17] != "Cooking" || loaded[18] != "Crafting" || loaded[19] != "Smithing" {
-		t.Fatalf("Loaded() = %v, want [AdminCommands BankBooths Doors Ladders LumbridgeGuide Shopkeepers Standard Bindings Standard Curses Freezes TeleBlock ElementalStaves WildernessDitch WornWeights EnchantJewellery Fishing Mining Woodcutting Cooking Crafting Smithing]", loaded)
+	if loaded := hub.Loaded(); len(loaded) != 21 || loaded[0] != "AdminCommands" || loaded[1] != "BankBooths" || loaded[2] != "Doors" || loaded[3] != "Ladders" || loaded[4] != "LumbridgeGuide" || loaded[5] != "NpcDrops" || loaded[6] != "Shopkeepers" || loaded[7] != "Standard Bindings" || loaded[8] != "Standard Curses" || loaded[9] != "Freezes" || loaded[10] != "TeleBlock" || loaded[11] != "ElementalStaves" || loaded[12] != "WildernessDitch" || loaded[13] != "WornWeights" || loaded[14] != "EnchantJewellery" || loaded[15] != "Fishing" || loaded[16] != "Mining" || loaded[17] != "Woodcutting" || loaded[18] != "Cooking" || loaded[19] != "Crafting" || loaded[20] != "Smithing" {
+		t.Fatalf("Loaded() = %v, want [AdminCommands BankBooths Doors Ladders LumbridgeGuide NpcDrops Shopkeepers Standard Bindings Standard Curses Freezes TeleBlock ElementalStaves WildernessDitch WornWeights EnchantJewellery Fishing Mining Woodcutting Cooking Crafting Smithing]", loaded)
 	}
 	if !strings.Contains(buf.String(), "disabled=") {
 		t.Errorf("hub log %q does not report the disabled plugin", buf.String())

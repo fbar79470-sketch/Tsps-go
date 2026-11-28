@@ -105,6 +105,7 @@ func TestStoreExamineSource(t *testing.T) {
 		"ground-items.json":      `[]`,
 		"npc-combat-defs.json":   `{}`,
 		"npc-animations.json":    `{}`,
+		"npc-drops.json":         `{"tables": {}, "npcs": {}}`,
 		"shops.json":             `[]`,
 		"custom-shops.json":      `[]`,
 		"npc-spawns.json":        `[]`,

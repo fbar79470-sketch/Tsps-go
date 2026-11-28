@@ -34,6 +34,7 @@ func shopFixtureStore(t *testing.T) *definition.Store {
 		"interface-layouts.json": `{}`, "object-spawns.json": `[]`,
 		"ground-items.json": `[]`, "npc-combat-defs.json": `{}`,
 		"npc-animations.json": `{}`, "shops.json": shops,
+		"npc-drops.json":    `{"tables": {}, "npcs": {}}`,
 		"custom-shops.json": `[]`, "npc-spawns.json": `[]`,
 	} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
@@ -548,6 +549,7 @@ func TestNpcInteractionSource(t *testing.T) {
 		"interface-layouts.json": `{}`, "object-spawns.json": `[]`,
 		"ground-items.json": `[]`, "npc-combat-defs.json": `{}`,
 		"npc-animations.json": `{}`, "shops.json": `[]`,
+		"npc-drops.json":    `{"tables": {}, "npcs": {}}`,
 		"custom-shops.json": `[]`, "npc-spawns.json": `[]`,
 	} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {

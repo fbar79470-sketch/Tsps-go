@@ -157,6 +157,7 @@ func TestLoadMissingRequiredFiles(t *testing.T) {
 		"ground-items.json",
 		"npc-combat-defs.json",
 		"npc-animations.json",
+		"npc-drops.json",
 		"shops.json",
 		"custom-shops.json",
 	} {
@@ -206,6 +207,7 @@ func TestLoadNonArrayCoreFilesFail(t *testing.T) {
 	for _, tc := range []struct{ name, content string }{
 		{"object-spawns.json", `{}`},
 		{"ground-items.json", `{}`},
+		{"npc-drops.json", `[]`},
 		{"shops.json", `{}`},
 		{"interface-layouts.json", `[]`},
 	} {

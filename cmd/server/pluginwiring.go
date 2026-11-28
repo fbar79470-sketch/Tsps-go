@@ -25,6 +25,7 @@ import (
 	_ "tsps-go/internal/content/ladders"
 	_ "tsps-go/internal/content/lumbridgeguide"
 	_ "tsps-go/internal/content/mining"
+	_ "tsps-go/internal/content/npcdrops"
 	_ "tsps-go/internal/content/seekingarrows"
 	_ "tsps-go/internal/content/shopkeepers"
 	_ "tsps-go/internal/content/smithing"

@@ -23,6 +23,10 @@
 //     prices / alch / overrides application onto ItemDefinition;
 //     the custom-items portion is NOT ported here — see below)
 //   - plugins/npcs/NpcSpawns.plugin.js (core npc-spawns registration)
+//   - plugins/npcs/NpcDrops.plugin.js, SeedCategories.NpcDrops.js
+//     (NPC drop tables, shared subtables, overrides, Slayer-key
+//     strip — the loader in npcdrops.go; the roller and death
+//     integration live in internal/content/npcdrops/)
 //
 // Load reads from a definitions directory at runtime (like
 // world.json); no definition data is bundled, and tests use small
@@ -52,6 +56,11 @@
 //     failure, not a Load error — zero NPC spawns, boot continues.
 //   - shops.json and custom-shops.json: BOTH REQUIRED (Shop loader
 //     readCoreDefinitions reads both with readFileSync).
+//   - npc-drops.json: REQUIRED (NpcDrops loader readJSONValue
+//     throws; must hold an object with tables and npcs sections).
+//     npc-drop-subtables.json and npc-drop-overrides.json:
+//     OPTIONAL when missing (TS readJson returns null, treated as
+//     {}); malformed when present fails.
 //   - item-gameplay.json, item-prices.json, item-alch.json,
 //     item-overrides.json: OPTIONAL when missing (a deliberate
 //     deviation for item-gameplay.json, which the TS plugin
@@ -128,9 +137,7 @@
 //     (data/definitions/item-combat-styles.json, loaded by
 //     game.LoadCombatStyles; unknown fight-type refs error at
 //     load, as TS throws).
-//   - Files no ported loader or wrapper reads: npc-drops.json,
-//     npc-drop-overrides.json, npc-drop-subtables.json,
-//     npc-rivalries.json, npc-spawn-sync.json, dormant-npcs.json,
+//   - Files no ported loader or wrapper reads: npc-rivalries.json, npc-spawn-sync.json, dormant-npcs.json,
 //     weapon-stats.json, music-areas.json,
 //     music-areas-classic.json, bot-*.json, clue-caskets.json,
 //     reward-caskets.json, pvp-bot-loadouts.json,

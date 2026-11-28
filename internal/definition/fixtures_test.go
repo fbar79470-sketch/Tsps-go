@@ -33,6 +33,7 @@ func minimalFiles() map[string]string {
 		"shops.json":             `[]`,
 		"custom-shops.json":      `[]`,
 		"npc-spawns.json":        `[]`,
+		"npc-drops.json":         `{"tables": {}, "npcs": {}}`,
 	}
 }
 

@@ -20,7 +20,8 @@ import (
 // npc-animations.json, shops.json, custom-shops.json.
 // npc-spawns.json is registry-loaded and tolerated when missing;
 // custom-definitions.json / custom-items.json are overlay files
-// tolerated when missing.
+// tolerated when missing. npc-drops.json is required by the drop
+// loader (see internal/definition/doc.go).
 
 func writeWiringFixture(t *testing.T, files map[string]string) string {
 	t.Helper()
@@ -31,6 +32,7 @@ func writeWiringFixture(t *testing.T, files map[string]string) string {
 		"ground-items.json":      "[]",
 		"npc-combat-defs.json":   "{}",
 		"npc-animations.json":    "{}",
+		"npc-drops.json":         `{"tables": {}, "npcs": {}}`,
 		"shops.json":             "[]",
 		"custom-shops.json":      "[]",
 	}

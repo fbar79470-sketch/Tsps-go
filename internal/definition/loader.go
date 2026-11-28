@@ -279,24 +279,32 @@ type Store struct {
 	itemIDsByName     map[string]int
 	itemIDsByNameDone bool
 
-	npcSpawns       []NpcSpawn
-	objectSpawns    []ObjectSpawn
-	objectRemovals  []ObjectSpawn
-	groundItems     []GroundItem
-	interactions    map[int]*NpcInteractionDefinition
-	interactionList []*NpcInteractionDefinition
-	layouts         map[string]*InterfaceLayoutDefinition
-	layoutsByID     map[int][]*InterfaceLayoutDefinition
-	layoutList      []*InterfaceLayoutDefinition
-	shops           map[int]*ShopDefinition
-	shopList        []*ShopDefinition
-	customShopIDs   map[int]bool
-	itemOverlays    map[int]*itemOverlay
-	npcOverlays     map[int]*npcOverlay
-	npcExamines     map[int]string
-	objectExamines  map[int]string
-	equipmentSounds *equipmentSoundData
-	npcCombatSounds map[int]npcSounds
+	npcSpawns        []NpcSpawn
+	objectSpawns     []ObjectSpawn
+	objectRemovals   []ObjectSpawn
+	groundItems      []GroundItem
+	npcDropTables    map[string]*NpcDropTable
+	npcDropTableList []*NpcDropTable
+	npcDropNPCs      map[int]*NpcDropNPC
+	npcDropByNPC     map[int][]*NpcDropTable
+	npcDropShared    map[string][]NpcDropSharedEntry
+	npcDropSeed      map[string]*NpcDropSeedTable
+	npcDropBoss      map[int]bool
+	npcDropStats     NpcDropStats
+	interactions     map[int]*NpcInteractionDefinition
+	interactionList  []*NpcInteractionDefinition
+	layouts          map[string]*InterfaceLayoutDefinition
+	layoutsByID      map[int][]*InterfaceLayoutDefinition
+	layoutList       []*InterfaceLayoutDefinition
+	shops            map[int]*ShopDefinition
+	shopList         []*ShopDefinition
+	customShopIDs    map[int]bool
+	itemOverlays     map[int]*itemOverlay
+	npcOverlays      map[int]*npcOverlay
+	npcExamines      map[int]string
+	objectExamines   map[int]string
+	equipmentSounds  *equipmentSoundData
+	npcCombatSounds  map[int]npcSounds
 }
 
 // NPCSpawns returns the loaded NPC spawns, in merged load order.
@@ -378,6 +386,12 @@ func Load(dir string, opts LoadOptions) (*Store, error) {
 		npcExamines:      make(map[int]string),
 		objectExamines:   make(map[int]string),
 		npcCombatSounds:  make(map[int]npcSounds),
+		npcDropTables:    make(map[string]*NpcDropTable),
+		npcDropNPCs:      make(map[int]*NpcDropNPC),
+		npcDropByNPC:     make(map[int][]*NpcDropTable),
+		npcDropShared:    make(map[string][]NpcDropSharedEntry),
+		npcDropSeed:      make(map[string]*NpcDropSeedTable),
+		npcDropBoss:      make(map[int]bool),
 		seqNames:         make(map[int]string),
 		seqIDsByName:     make(map[string]int),
 	}
@@ -431,6 +445,9 @@ func Load(dir string, opts LoadOptions) (*Store, error) {
 		return nil, err
 	}
 	if err := s.loadShops(); err != nil {
+		return nil, err
+	}
+	if err := s.loadNpcDrops(); err != nil {
 		return nil, err
 	}
 	// Item JSON application and the examine/sound files are not
